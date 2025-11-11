@@ -70,3 +70,23 @@ ValioAimo is challenging you to rethink delivery reliability.
 They serve over 20,000 professional kitchens but missing items are often discovered too late, at delivery or the next morning.
 
 Can you design a multimodal AI solution that predicts shortages before they happen, reaches out to customers in real time, and even fixes issues after delivery? Voice, text, images, video -- the tools are yours.
+
+## WithSecure: From Firefighting to Foresight
+Security teams and CISOs are constantly being asked to approve new tools they've never seen before — each with its own unknowns and potential risks.
+
+WithSecure's challenge calls on hackers to rethink this process by building a GenAI-powered assessor that fetches reliable signals from across the web and turns them into concise, decision-ready security briefs. The goal? To move security from reactive firefighting to proactive enablement, helping people make faster, smarter, and more confident choices in a rapidly evolving threat landscape.
+
+## HSY & Valmet: Optimizing Energy in Motion
+HSY and Valmet want participants to take energy optimization for wastewater systems to the next level. 
+
+Standard control systems struggle to adapt to constantly changing conditions: unpredictable rainfall, shifting process requirements, and electricity prices that fluctuate every fifteen minutes. Agentic AI and multi-agent solutions might just hold the key. This challenge invites hackers to design the optimizer of the future, a system that balances efficiency, sustainability, and adaptability in real time.
+
+## Pfizer & Aava: Predicting Pain Before It Strikes
+Over a billion people suffer from migraines, yet 40% of existing treatments fall short, leaving most patients waiting until the pain is unbearable. 
+
+Pfizer and Aava's challenge flips that script. They ask hackers to design a predictive health prototype capable of forecasting migraine onset using passive and contextual signals such as health data collected by smart devices, personal activity patterns and schedules, and even local climate conditions. The ideal solution runs quietly in the background, requires minimal manual input, and empowers users with personalized insights into their triggers. The mission: to help millions stay productive, improve quality of life, and bring truly predictive care within reach on a global scale.
+
+## Aalto University: Reimagining How We Age
+Aging is inevitable — but how we age is up for reinvention. 
+
+Aalto University invites hackers to create AI-powered solutions that support active, connected, and independent living at home for the elderly. The challenge centers on building systems that foster companionship and safety, give loved ones peace of mind, and provide service providers with accurate, up-to-date information. It's an opportunity to rethink aging not as decline, but as a stage of life enhanced by technology, empathy, and design.
