@@ -39,6 +39,7 @@ This project explores a future where augmented memory and real-time understandin
 - Accepted Tasks: Shows all confirmed tasks organized by due date.
 - People Directory: List of all known people with: their profile; history of conversations/meetings; summary of each interaction; connection to tasks or mentions
 - New Person Identification: Interface to register a new person detected by the system.
+- Add tasks that were not detected by the glasses
 
 ### Backend Responsibilities
 - Store user tasks (standby + accepted)
