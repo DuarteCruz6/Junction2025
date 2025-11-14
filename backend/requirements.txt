@@ -5,8 +5,11 @@ python-dotenv==1.0.1
 google-cloud-speech==2.28.0
 google-api-core==2.19.0
 
-# OpenAI for STT + LLM
+# OpenAI for LLM
 openai==1.54.0
+
+# ElevenLabs for STT
+elevenlabs>=1.0.0
 
 # Database (Supabase/PostgreSQL)
 sqlalchemy==2.0.36

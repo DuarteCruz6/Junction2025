@@ -89,6 +89,18 @@ class Speaker(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class UserSettings(Base):
+    """User settings model"""
+    __tablename__ = "user_settings"
+    
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, unique=True, index=True)  # User identifier
+    spoken_languages = Column(JSON, default=list)  # Array of language codes (e.g., ["en", "pt", "es"])
+    preferred_language = Column(String, nullable=True)  # Preferred language code (e.g., "en")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # Create tables
 def init_db():
     """Initialize database tables"""

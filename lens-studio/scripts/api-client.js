@@ -13,6 +13,8 @@ class APIClient {
         this.baseUrl = API_BASE_URL;
         this.currentMeetingId = null;
         this.isRecording = false;
+        this.audioWebSocket = null;
+        this.wsBaseUrl = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://');
     }
 
     /**
@@ -35,6 +37,13 @@ class APIClient {
             const data = await response.json();
             this.currentMeetingId = data.meeting_id;
             this.isRecording = true;
+            
+            // Connect audio WebSocket
+            try {
+                await this.connectAudioStream();
+            } catch (error) {
+                print(`Warning: Could not connect audio stream: ${error.message}`);
+            }
             
             print(`Meeting started: ${this.currentMeetingId}`);
             return data;
@@ -68,6 +77,10 @@ class APIClient {
             const data = await response.json();
             this.isRecording = false;
             
+            // Disconnect audio WebSocket
+            this.endAudioStream();
+            this.disconnectAudioStream();
+            
             print(`Meeting stopped: ${this.currentMeetingId}`);
             return data;
         } catch (error) {
@@ -77,11 +90,136 @@ class APIClient {
     }
 
     /**
-     * Send audio chunk for real-time STT processing
+     * Connect WebSocket for audio streaming
+     * @returns {Promise<void>}
+     */
+    async connectAudioStream() {
+        if (!this.currentMeetingId) {
+            throw new Error("No active meeting");
+        }
+
+        if (this.audioWebSocket && this.audioWebSocket.readyState === WebSocket.OPEN) {
+            print("Audio WebSocket already connected");
+            return;
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                const wsUrl = `${this.wsBaseUrl}/ws/audio/${this.currentMeetingId}`;
+                this.audioWebSocket = new WebSocket(wsUrl);
+
+                this.audioWebSocket.onopen = () => {
+                    print(`Audio WebSocket connected for meeting ${this.currentMeetingId}`);
+                    resolve();
+                };
+
+                this.audioWebSocket.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        this.handleAudioMessage(message);
+                    } catch (error) {
+                        print(`Error parsing WebSocket message: ${error.message}`);
+                    }
+                };
+
+                this.audioWebSocket.onerror = (error) => {
+                    print(`Audio WebSocket error: ${error}`);
+                    reject(error);
+                };
+
+                this.audioWebSocket.onclose = () => {
+                    print("Audio WebSocket closed");
+                    this.audioWebSocket = null;
+                };
+            } catch (error) {
+                print(`Error creating WebSocket: ${error.message}`);
+                reject(error);
+            }
+        });
+    }
+
+    /**
+     * Handle incoming WebSocket messages
+     * @param {Object} message - WebSocket message
+     */
+    handleAudioMessage(message) {
+        switch (message.type) {
+            case "connected":
+                print(`Audio streaming ready: ${message.data.message}`);
+                break;
+            case "transcription_result":
+                // Trigger callback if available
+                if (this.onTranscriptionResult) {
+                    this.onTranscriptionResult(message.data);
+                }
+                break;
+            case "transcription_error":
+                print(`Transcription error: ${message.data.error}`);
+                if (this.onTranscriptionError) {
+                    this.onTranscriptionError(message.data.error);
+                }
+                break;
+            case "audio_received":
+                // Acknowledgment - audio chunk received
+                break;
+            case "pong":
+                // Keep-alive response
+                break;
+            default:
+                print(`Unknown message type: ${message.type}`);
+        }
+    }
+
+    /**
+     * Send audio chunk via WebSocket
+     * @param {ArrayBuffer|Uint8Array} audioData - PCM audio data
+     * @param {boolean} isFinal - Whether this is the final chunk
+     */
+    sendAudioChunk(audioData, isFinal = false) {
+        if (!this.audioWebSocket || this.audioWebSocket.readyState !== WebSocket.OPEN) {
+            print("Audio WebSocket not connected");
+            return;
+        }
+
+        try {
+            // Send binary data directly (PCM format)
+            this.audioWebSocket.send(audioData);
+        } catch (error) {
+            print(`Error sending audio chunk: ${error.message}`);
+        }
+    }
+
+    /**
+     * End audio stream
+     */
+    endAudioStream() {
+        if (this.audioWebSocket && this.audioWebSocket.readyState === WebSocket.OPEN) {
+            try {
+                this.audioWebSocket.send(JSON.stringify({
+                    type: "end_stream"
+                }));
+            } catch (error) {
+                print(`Error ending audio stream: ${error.message}`);
+            }
+        }
+    }
+
+    /**
+     * Disconnect audio WebSocket
+     */
+    disconnectAudioStream() {
+        if (this.audioWebSocket) {
+            this.audioWebSocket.close();
+            this.audioWebSocket = null;
+        }
+    }
+
+    /**
+     * Send audio chunk for real-time STT processing (legacy HTTP method)
      * @param {ArrayBuffer} audioData - Audio data chunk
      * @returns {Promise<Object>} STT result with transcript and speaker info
      */
-    async sendAudioChunk(audioData) {
+    async sendAudioChunkHTTP(audioData) {
         if (!this.currentMeetingId) {
             throw new Error("No active meeting");
         }

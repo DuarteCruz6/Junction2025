@@ -4,9 +4,8 @@ Handles real-time WebSocket connections for live updates
 """
 
 from typing import Dict, Set
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from datetime import datetime
-import json
 import asyncio
 
 class WebSocketManager:

@@ -23,7 +23,7 @@ async def root():
             "status": "running",
             "version": "1.0.0",
             "features": {
-                "stt": "OpenAI Whisper with Diarization",
+                "stt": "ElevenLabs Scribe with Diarization",
                 "llm": "GPT-4o-mini for Summarization & Task Extraction",
                 "websocket": "Real-time updates enabled",
                 "database": "Supabase/PostgreSQL" if DB_AVAILABLE else "Using in-memory storage",

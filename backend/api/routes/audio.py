@@ -37,7 +37,7 @@ async def stream_audio(
         if ext in ["m4a", "wav", "mp3", "ogg", "flac"]:
             audio_format = ext
     
-    # Process audio with STT service (OpenAI with diarization)
+    # Process audio with STT service (ElevenLabs with diarization)
     result = await stt_service.transcribe_with_diarization(
         audio_data=audio_data,
         audio_format=audio_format,

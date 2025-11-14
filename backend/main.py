@@ -9,8 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Import route routers
-from api.routes import health, meetings, audio, tasks, speakers, persons
-from api.routes.websocket import websocket_endpoint
+from api.routes import health, meetings, audio, tasks, speakers, persons, settings
 
 # Import database initialization
 try:
@@ -53,9 +52,12 @@ app.include_router(audio.router)
 app.include_router(tasks.router)
 app.include_router(speakers.router)
 app.include_router(persons.router)
+app.include_router(settings.router)
 
 # WebSocket routes need to be added directly (FastAPI routers don't support WebSocket)
+from api.routes.websocket import websocket_endpoint, audio_streaming_endpoint
 app.websocket("/ws/meetings/{meeting_id}")(websocket_endpoint)
+app.websocket("/ws/audio/{meeting_id}")(audio_streaming_endpoint)
 
 
 if __name__ == "__main__":

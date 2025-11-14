@@ -3,9 +3,14 @@ WebSocket endpoints for real-time updates
 """
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import json
+import base64
+import sys
+from datetime import datetime
 
 from services.websocket_manager import websocket_manager
-from utils.db_helpers import get_meeting_from_db_or_memory
+from services.stt_service import stt_service
+from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db
 
 router = APIRouter()
 
@@ -43,4 +48,310 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
         print(f"WebSocket error for meeting {meeting_id}: {e}")
     finally:
         websocket_manager.disconnect(websocket, meeting_id)
+
+
+@router.websocket("/ws/audio/{meeting_id}")
+async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
+    """WebSocket endpoint for streaming audio chunks and receiving transcriptions"""
+    # print(f"[WebSocket] Audio streaming endpoint called for meeting {meeting_id}")  # DEBUG
+    await websocket.accept()
+    # print(f"[WebSocket] WebSocket accepted for meeting {meeting_id}")  # DEBUG
+    
+    # Verify meeting exists
+    meeting = get_meeting_from_db_or_memory(meeting_id)
+    if not meeting:
+        # print(f"[WebSocket] Meeting {meeting_id} not found, closing connection")  # DEBUG
+        await websocket.close(code=1008, reason="Meeting not found")
+        return
+    
+    # print(f"[WebSocket] Meeting {meeting_id} found, starting audio streaming")  # DEBUG
+    
+    # Callback function to send transcript updates
+    async def send_transcript_callback(result: dict, meeting_id: str):
+        """Callback to send transcription results via WebSocket and broadcast"""
+        try:
+            # print(f"[WebSocket] Callback called for meeting {meeting_id}, success={result.get('success')}")  # DEBUG
+            
+            # Check if WebSocket is still open (try-except for safety)
+            try:
+                # Try to check connection state
+                if hasattr(websocket, 'client_state'):
+                    state = websocket.client_state
+                    if hasattr(state, 'name') and state.name != "CONNECTED":
+                        # print(f"[WebSocket] Connection closed, cannot send transcription")  # DEBUG
+                        return
+            except Exception:
+                # If we can't check state, try to send anyway (will fail gracefully)
+                pass
+            
+            if not result.get("success"):
+                error_msg = result.get("error", "Unknown error")
+                print(f"[WebSocket] Transcription error: {error_msg}")  # Keep error messages
+                try:
+                    # Check if WebSocket is still connected before sending
+                    await websocket.send_json({
+                        "type": "transcription_error",
+                        "data": {"error": error_msg}
+                    })
+                except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+                    # WebSocket closed or error sending, ignore silently
+                    print(f"[WebSocket] Connection closed, cannot send error: {type(e).__name__}")
+                    return
+                except Exception as e:
+                    # Other errors, log but don't crash
+                    print(f"[WebSocket] Error sending error message: {e}")
+                    return
+                return
+            
+            meeting = get_meeting_from_db_or_memory(meeting_id)
+            if not meeting:
+                # print(f"[WebSocket] Meeting {meeting_id} not found")  # DEBUG
+                return
+            
+            segments = result.get("segments", [])
+            # print(f"[WebSocket] Processing {len(segments)} segments")  # DEBUG
+            
+            # if not segments:
+            #     print(f"[WebSocket] No segments in result, full_text: {result.get('full_text', '')[:100]}")  # DEBUG
+            
+            # Process each segment
+            new_segments = []
+            for segment in segments:
+                transcript_entry = {
+                    "text": segment["text"],
+                    "speaker": segment["speaker"],
+                    "start": segment["start"],
+                    "end": segment["end"],
+                    "timestamp": datetime.now().isoformat(),
+                }
+                
+                # Show transcription (clean output)
+                speaker = segment.get("speaker", "Unknown")
+                text = segment.get("text", "")
+                print(f"📝 {speaker}: {text}")
+                
+                meeting["transcript"].append(transcript_entry)
+                new_segments.append(transcript_entry)
+                
+                # Broadcast to all WebSocket connections for this meeting
+                try:
+                    await websocket_manager.send_transcript_update(
+                        meeting_id=meeting_id,
+                        transcript_entry=transcript_entry
+                    )
+                except Exception as e:
+                    print(f"[WebSocket] Error broadcasting transcript: {e}")  # Keep error messages
+            
+            # Save updated meeting
+            save_meeting_to_db(meeting)
+            
+            # Send confirmation to audio streaming client
+            response_data = {
+                "type": "transcription_result",
+                "data": {
+                    "segments": new_segments,
+                    "full_text": result.get("full_text", ""),
+                    "count": len(new_segments)
+                }
+            }
+            # print(f"[WebSocket] Sending transcription_result with {len(new_segments)} segments")  # DEBUG
+            try:
+                await websocket.send_json(response_data)
+                # print(f"[WebSocket] Transcription result sent successfully")  # DEBUG
+            except (WebSocketDisconnect, RuntimeError, ConnectionError) as ws_error:
+                # WebSocket is closed or disconnected, ignore silently
+                print(f"[WebSocket] Connection closed, cannot send transcription result: {type(ws_error).__name__}")
+                return
+            except Exception as ws_error:
+                # Other WebSocket errors
+                print(f"[WebSocket] Error sending transcription result: {ws_error}")
+                return
+        except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+            # WebSocket disconnected, ignore silently
+            print(f"[WebSocket] Connection closed in callback: {type(e).__name__}")
+        except Exception as e:
+            print(f"[WebSocket] Error in callback: {e}")  # Keep error messages
+            import traceback
+            traceback.print_exc()
+            # Don't try to send error message if WebSocket is closed
+    
+    try:
+        # Send connection confirmation
+        # print(f"[WebSocket] Sending connection confirmation to meeting {meeting_id}")  # DEBUG
+        await websocket.send_json({
+            "type": "connected",
+            "data": {
+                "meeting_id": meeting_id,
+                "status": "ready",
+                "message": "Audio streaming ready"
+            }
+        })
+        # print(f"[WebSocket] Entering message receive loop for meeting {meeting_id}")  # DEBUG
+        
+        while True:
+            try:
+                # Receive audio data (can be text with base64 or binary)
+                try:
+                    message = await websocket.receive()
+                except RuntimeError as e:
+                    # WebSocket disconnected
+                    if "disconnect" in str(e).lower() or "receive" in str(e).lower():
+                        print(f"[WebSocket] Connection closed")
+                        break
+                    raise
+                
+                audio_chunk = None
+                is_final = False
+                
+                if "bytes" in message:
+                    # Binary audio data (PCM)
+                    audio_chunk = message["bytes"]
+                    print(f"[WebSocket] Received audio: {len(audio_chunk)} bytes", flush=True)
+                    is_final = False
+                elif "text" in message:
+                    # JSON message with audio data or control
+                    try:
+                        data = json.loads(message["text"])
+                        if data.get("type") == "audio_chunk":
+                            # Base64 encoded audio
+                            audio_chunk = base64.b64decode(data["data"])
+                            is_final = data.get("is_final", False)
+                        elif data.get("type") == "end_stream":
+                            # Final chunk
+                            is_final = True
+                            audio_chunk = b""
+                        elif data.get("type") == "ping":
+                            # Keep-alive ping
+                            await websocket.send_json({"type": "pong"})
+                            continue
+                        else:
+                            continue
+                    except json.JSONDecodeError:
+                        continue
+                else:
+                    print(f"[WebSocket] Unknown message format: {list(message.keys())}")
+                    continue
+                
+                # Process audio chunk if we have data
+                if audio_chunk:
+                    # print(f"[WebSocket] Processing audio chunk: {len(audio_chunk)} bytes", flush=True)  # DEBUG
+                    # Update STT service to use callback
+                    async with stt_service.buffer_lock:
+                        # Add chunk to buffer
+                        stt_service.streaming_buffers[meeting_id].append(audio_chunk)
+                        # print(f"[WebSocket] Buffer now has {len(stt_service.streaming_buffers[meeting_id])} chunks")  # DEBUG
+                        
+                        # Calculate buffer duration
+                        total_pcm = b''.join(stt_service.streaming_buffers[meeting_id])
+                        buffer_duration = stt_service._calculate_audio_duration(
+                            total_pcm,
+                            stt_service.SAMPLE_RATE,
+                            stt_service.SAMPLE_WIDTH
+                        )
+                        # print(f"[WebSocket] Buffer duration: {buffer_duration:.2f}s (min: {stt_service.MIN_BUFFER_DURATION}, max: {stt_service.MAX_BUFFER_DURATION})")  # DEBUG
+                        
+                        # Check if we should process
+                        should_process = (
+                            is_final or
+                            buffer_duration >= stt_service.MAX_BUFFER_DURATION or
+                            buffer_duration >= stt_service.MIN_BUFFER_DURATION
+                        )
+                        # print(f"[WebSocket] Should process: {should_process} (is_final={is_final}, duration_check={buffer_duration >= stt_service.MIN_BUFFER_DURATION})")  # DEBUG
+                        
+                        if should_process and len(stt_service.streaming_buffers[meeting_id]) > 0:
+                            print(f"[WebSocket] Processing buffer: {len(stt_service.streaming_buffers[meeting_id])} chunks ({buffer_duration:.2f}s)")
+                            # Get buffer and clear it
+                            buffer_pcm = b''.join(stt_service.streaming_buffers[meeting_id])
+                            stt_service.streaming_buffers[meeting_id].clear()
+                            
+                            # Convert to WAV
+                            wav_data = stt_service._pcm_to_wav(
+                                buffer_pcm,
+                                stt_service.SAMPLE_RATE,
+                                stt_service.CHANNELS,
+                                stt_service.SAMPLE_WIDTH
+                            )
+                            
+                            print(f"[WebSocket] Sending to ElevenLabs API for transcription...")
+                            # Process with callback
+                            import asyncio
+                            asyncio.create_task(
+                                stt_service._process_buffer(
+                                    wav_data,
+                                    meeting_id,
+                                    is_final,
+                                    send_transcript_callback
+                                )
+                            )
+                            
+                            # Send acknowledgment (with error handling)
+                            try:
+                                await websocket.send_json({
+                                    "type": "audio_received",
+                                    "data": {
+                                        "buffer_duration": buffer_duration,
+                                        "status": "processing"
+                                    }
+                                })
+                            except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+                                print(f"[WebSocket] Connection closed while sending acknowledgment: {type(e).__name__}")
+                                break
+                            except Exception as e:
+                                print(f"[WebSocket] Error sending acknowledgment: {e}")
+                                # Continue processing even if acknowledgment fails
+                
+            except WebSocketDisconnect:
+                print(f"[WebSocket] Client disconnected for meeting {meeting_id}")
+                break
+            except RuntimeError as e:
+                # Check if it's a disconnection error
+                error_str = str(e).lower()
+                if "disconnect" in error_str or "connection" in error_str or "closed" in error_str:
+                    print(f"[WebSocket] Connection closed: {e}")
+                    break
+                # Re-raise if it's a different RuntimeError
+                raise
+            except Exception as e:
+                print(f"[WebSocket] Error processing audio chunk for meeting {meeting_id}: {e}")  # Keep error messages
+                import traceback
+                traceback.print_exc()
+                try:
+                    # Only send error if WebSocket is still connected
+                    await websocket.send_json({
+                        "type": "error",
+                        "data": {"error": str(e)}
+                    })
+                except (WebSocketDisconnect, RuntimeError, ConnectionError):
+                    # WebSocket already closed, ignore
+                    print(f"[WebSocket] Cannot send error message - connection closed")
+                    break
+                except Exception as send_error:
+                    print(f"[WebSocket] Error sending error message: {send_error}")
+                
+    except WebSocketDisconnect:
+        print(f"[WebSocket] Client disconnected from audio stream for meeting {meeting_id}")
+    except Exception as e:
+        print(f"[WebSocket] WebSocket audio streaming error for meeting {meeting_id}: {e}")  # Keep error messages
+        import traceback
+        traceback.print_exc()
+    finally:
+        print(f"[WebSocket] Cleaning up audio stream for meeting {meeting_id}")
+        # Clear buffer on disconnect
+        stt_service.clear_buffer(meeting_id)
+        # Only close if still connected
+        try:
+            if hasattr(websocket, 'client_state'):
+                state = websocket.client_state
+                if hasattr(state, 'name') and state.name == "CONNECTED":
+                    await websocket.close(code=1000, reason="Stream ended")
+            else:
+                # Fallback: try to close anyway
+                try:
+                    await websocket.close(code=1000, reason="Stream ended")
+                except Exception:
+                    # Already closed, ignore
+                    pass
+        except Exception as e:
+            # Connection already closed, ignore
+            print(f"[WebSocket] Connection already closed during cleanup: {type(e).__name__}")
 

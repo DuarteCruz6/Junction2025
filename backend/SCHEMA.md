@@ -4,10 +4,11 @@ This document describes the database schema used in the Junction2025 backend.
 
 ## Overview
 
-The schema consists of **3 main tables**:
+The schema consists of **4 main tables**:
 1. `meetings` - Stores meeting sessions and their data
 2. `tasks` - Stores extracted tasks from meetings
 3. `speakers` - Stores known speakers for speaker diarization
+4. `user_settings` - Stores user preferences and settings
 
 ---
 
@@ -94,6 +95,45 @@ Stores known speakers for improved speaker diarization accuracy.
 
 ---
 
+## Table: `user_settings`
+
+Stores user preferences and settings, including language preferences.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | String | PRIMARY KEY | Unique settings identifier (UUID) |
+| `user_id` | String | NOT NULL, UNIQUE, INDEXED | User identifier (unique per user) |
+| `spoken_languages` | JSON | NOT NULL, DEFAULT [] | Array of language codes the user speaks (e.g., `["en", "pt", "es"]`) |
+| `preferred_language` | String | NULLABLE | Preferred language code for UI/translation (e.g., `"en"`) |
+| `created_at` | DateTime | NOT NULL, DEFAULT now() | Record creation timestamp |
+| `updated_at` | DateTime | NOT NULL, DEFAULT now() | Last update timestamp (auto-updated) |
+
+### Spoken Languages JSON Structure
+
+The `spoken_languages` field is a JSON array of ISO 639-1 language codes:
+
+```json
+["en", "pt", "es", "fr"]
+```
+
+Common language codes:
+- `en` - English
+- `pt` - Portuguese
+- `es` - Spanish
+- `fr` - French
+- `de` - German
+- `it` - Italian
+- `ja` - Japanese
+- `zh` - Chinese
+- `ko` - Korean
+
+**Usage:** These settings are used to:
+- Configure speech-to-text language detection
+- Set preferred language for transcriptions and summaries
+- Personalize the user experience
+
+---
+
 ## Relationships
 
 ```
@@ -109,6 +149,7 @@ meetings (1) ──< (many) tasks
 
 - `tasks.meeting_id` - Indexed for fast lookups of tasks by meeting
 - `speakers.name` - Unique index for speaker name lookups
+- `user_settings.user_id` - Unique index for user settings lookups
 
 ---
 
@@ -140,6 +181,20 @@ SELECT * FROM tasks WHERE meeting_id = 'meeting-uuid' ORDER BY created_at;
 ### Get all known speakers
 ```sql
 SELECT * FROM speakers ORDER BY name;
+```
+
+### Get user settings
+```sql
+SELECT * FROM user_settings WHERE user_id = 'user-id';
+```
+
+### Update user settings
+```sql
+UPDATE user_settings 
+SET spoken_languages = '["en", "pt"]', 
+    preferred_language = 'en',
+    updated_at = now()
+WHERE user_id = 'user-id';
 ```
 
 ---
@@ -181,7 +236,7 @@ This happens in the `init_db()` function, which is called on application startup
 
 Potential additions to the schema:
 
-- `users` table - For user authentication and multi-user support
+- `users` table - For user authentication and multi-user support (user_settings.user_id would reference this)
 - `meeting_participants` table - Track who attended meetings
 - `meeting_tags` table - Categorize meetings
 - `task_comments` table - Add comments to tasks
