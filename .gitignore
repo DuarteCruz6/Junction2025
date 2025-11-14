@@ -1,1 +1,113 @@
+# OS Files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Web App (React + Vite)
+web-app/node_modules/
+web-app/dist/
+web-app/.vite/
+web-app/*.local
+web-app/.DS_Store
+
+# Mobile App (React Native)
+mobile-app/node_modules/
+mobile-app/.gradle/
+mobile-app/android/.gradle/
+mobile-app/android/app/build/
+mobile-app/android/build/
+mobile-app/android/.idea/
+mobile-app/android/local.properties
+mobile-app/ios/Pods/
+mobile-app/ios/build/
+mobile-app/.expo/
+mobile-app/.expo-shared/
+mobile-app/*.log
+mobile-app/.DS_Store
+
+# Backend (Python)
+backend/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/*.so
+backend/.Python
+backend/build/
+backend/develop-eggs/
+backend/dist/
+backend/downloads/
+backend/eggs/
+backend/.eggs/
+backend/lib/
+backend/lib64/
+backend/parts/
+backend/sdist/
+backend/var/
+backend/wheels/
+backend/*.egg-info/
+backend/.installed.cfg
+backend/*.egg
+backend/.venv/
+backend/venv/
+backend/ENV/
+backend/env/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# ML Models (typically large files, should not be in git)
+backend/models/
+core/models/
+*.pth
+*.h5
+*.onnx
+*.pb
+*.tflite
+*.pt
+*.pkl
+*.joblib
+*.model
+
+# ML Model Tests (if needed to ignore)
+# ml_model_tests/**/*.m4a
+# ml_model_tests/**/*.wav
+# ml_model_tests/**/*.mp3

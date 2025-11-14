@@ -1,0 +1,29 @@
+import os
+from dotenv import load_dotenv
+from io import BytesIO
+from elevenlabs.client import ElevenLabs
+import json
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(script_dir, "meeting-pt.m4a")
+
+load_dotenv(dotenv_path=os.path.join(script_dir, "..", "..", ".env"))
+
+elevenlabs = ElevenLabs(
+    api_key=os.getenv("ELEVENLABS_API_KEY"),
+)
+
+# Load audio
+with open(file_path, "rb") as f:
+    audio_data = BytesIO(f.read())
+
+# ---- Transcribe ----
+transcription = elevenlabs.speech_to_text.convert(
+    file=audio_data,
+    model_id="scribe_v1",
+    diarize=True,
+)
+
+# Pretty JSON (optional)
+transcription_dict = transcription.dict()
+print(json.dumps(transcription_dict, indent=2, ensure_ascii=False))
