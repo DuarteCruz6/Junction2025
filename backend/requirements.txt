@@ -10,9 +10,9 @@ openai==1.54.0
 
 # Database (Supabase/PostgreSQL)
 sqlalchemy==2.0.36
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.11
 alembic==1.14.0
-supabase==2.3.0  # Supabase Python client (optional, for direct Supabase features)
+supabase==2.24.0  # Supabase Python client (optional, for direct Supabase features)
 redis==5.2.0
 
 # Background tasks
