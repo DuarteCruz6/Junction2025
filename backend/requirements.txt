@@ -2,4 +2,29 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 python-multipart==0.0.12
 python-dotenv==1.0.1
+google-cloud-speech==2.28.0
+google-api-core==2.19.0
+
+# OpenAI for STT + LLM
+openai==1.54.0
+
+# Database (Supabase/PostgreSQL)
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+supabase==2.3.0  # Supabase Python client (optional, for direct Supabase features)
+redis==5.2.0
+
+# Background tasks
+celery==5.4.0
+
+# WebSocket support (built into FastAPI, but adding for clarity)
+# Note: Using 12.x for Supabase realtime compatibility
+websockets>=12.0,<13.0
+
+# Utilities
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 

@@ -4,12 +4,30 @@ Main entry point for the backend API
 Enterprise Meeting AR - Spectacles Integration
 """
 
-from fastapi import FastAPI, HTTPException, Header, UploadFile, File
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Optional, List
 from datetime import datetime
 import uuid
+import asyncio
+import os
+from dotenv import load_dotenv
+
+# Import services
+from services.stt_service import stt_service
+from services.llm_service import llm_service
+from services.websocket_manager import websocket_manager
+
+# Import database (optional - can use in-memory for development)
+try:
+    from models.database import get_db, init_db, Meeting, Task
+    DB_AVAILABLE = True
+except Exception as e:
+    print(f"Database not available: {e}. Using in-memory storage.")
+    DB_AVAILABLE = False
+
+load_dotenv()
 
 app = FastAPI(
     title="Junction2025 Backend API",
@@ -26,11 +44,143 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage (replace with database in production)
+# Initialize database if available
+if DB_AVAILABLE:
+    try:
+        init_db()
+        print("Database initialized successfully")
+    except Exception as e:
+        print(f"Database initialization failed: {e}")
+
+# In-memory storage (fallback if DB not available)
 meetings_db = {}
 audio_streams = {}
 tasks_db = {}
 
+# Background task tracking
+background_tasks = {}
+summary_update_intervals = {}  # meeting_id -> asyncio.Task
+
+
+# ==================== Background Processing ====================
+
+async def process_summary_update(meeting_id: str):
+    """Background task to periodically update meeting summary"""
+    while meeting_id in meetings_db and meetings_db[meeting_id]["status"] == "active":
+        try:
+            meeting = meetings_db[meeting_id]
+            transcript = meeting.get("transcript", [])
+            
+            # Only update if we have new transcript segments (at least 3)
+            if len(transcript) >= 3:
+                previous_summary = meeting.get("summary")
+                
+                # Generate summary using LLM
+                result = await llm_service.summarize_meeting(
+                    transcript=transcript,
+                    previous_summary=previous_summary,
+                    incremental=True
+                )
+                
+                if result["success"]:
+                    meeting["summary"] = result["summary"]
+                    
+                    # Broadcast update via WebSocket
+                    await websocket_manager.send_summary_update(
+                        meeting_id=meeting_id,
+                        summary=result["summary"]
+                    )
+            
+            # Wait 30 seconds before next update
+            await asyncio.sleep(30)
+            
+        except Exception as e:
+            print(f"Error in summary update task for {meeting_id}: {e}")
+            await asyncio.sleep(30)
+
+
+async def process_task_extraction(meeting_id: str):
+    """Background task to periodically extract tasks"""
+    while meeting_id in meetings_db and meetings_db[meeting_id]["status"] == "active":
+        try:
+            meeting = meetings_db[meeting_id]
+            transcript = meeting.get("transcript", [])
+            existing_tasks = meeting.get("tasks", [])
+            
+            # Only extract if we have transcript segments
+            if len(transcript) >= 5:  # Need some content to extract tasks
+                result = await llm_service.extract_tasks(
+                    transcript=transcript,
+                    existing_tasks=existing_tasks
+                )
+                
+                if result["success"] and result["tasks"]:
+                    # Add new tasks
+                    for task in result["tasks"]:
+                        task_id = str(uuid.uuid4())
+                        task_data = {
+                            "task_id": task_id,
+                            "description": task.get("description", ""),
+                            "assignee": task.get("assignee"),
+                            "due_date": task.get("due_date"),
+                            "status": "pending",
+                            "priority": task.get("priority", "medium"),
+                            "created_at": datetime.now().isoformat(),
+                        }
+                        meeting["tasks"].append(task_data)
+                    
+                    # Broadcast update via WebSocket
+                    await websocket_manager.send_tasks_update(
+                        meeting_id=meeting_id,
+                        tasks=meeting["tasks"]
+                    )
+            
+            # Wait 60 seconds before next extraction
+            await asyncio.sleep(60)
+            
+        except Exception as e:
+            print(f"Error in task extraction task for {meeting_id}: {e}")
+            await asyncio.sleep(60)
+
+
+# ==================== WebSocket Endpoints ====================
+
+@app.websocket("/ws/meetings/{meeting_id}")
+async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
+    """WebSocket endpoint for real-time updates"""
+    await websocket_manager.connect(websocket, meeting_id)
+    
+    try:
+        # Send initial state
+        if meeting_id in meetings_db:
+            meeting = meetings_db[meeting_id]
+            await websocket_manager.send_personal_message({
+                "type": "initial_state",
+                "data": {
+                    "meeting_id": meeting_id,
+                    "status": meeting["status"],
+                    "summary": meeting.get("summary"),
+                    "tasks": meeting.get("tasks", []),
+                    "transcript_count": len(meeting.get("transcript", [])),
+                }
+            }, websocket)
+        
+        # Keep connection alive and handle incoming messages
+        while True:
+            try:
+                data = await websocket.receive_text()
+                # Handle incoming messages if needed
+                # For now, just keep connection alive
+            except WebSocketDisconnect:
+                break
+                
+    except Exception as e:
+        print(f"WebSocket error for meeting {meeting_id}: {e}")
+    finally:
+        websocket_manager.disconnect(websocket, meeting_id)
+
+
+# ==================== Root & Health ====================
 
 @app.get("/")
 async def root():
@@ -40,6 +190,12 @@ async def root():
             "message": "Junction2025 Backend API",
             "status": "running",
             "version": "1.0.0",
+            "features": {
+                "stt": "OpenAI Whisper with Diarization",
+                "llm": "GPT-4o-mini for Summarization & Task Extraction",
+                "websocket": "Real-time updates enabled",
+                "database": "Supabase/PostgreSQL" if DB_AVAILABLE else "Using in-memory storage",
+            }
         }
     )
 
@@ -67,6 +223,21 @@ async def start_meeting():
     meetings_db[meeting_id] = meeting_data
     audio_streams[meeting_id] = []
     
+    # Start background tasks
+    summary_task = asyncio.create_task(process_summary_update(meeting_id))
+    task_extraction_task = asyncio.create_task(process_task_extraction(meeting_id))
+    background_tasks[meeting_id] = {
+        "summary": summary_task,
+        "task_extraction": task_extraction_task,
+    }
+    
+    # Broadcast meeting started
+    await websocket_manager.send_status_update(
+        meeting_id=meeting_id,
+        status="started",
+        message="Meeting started"
+    )
+    
     return JSONResponse(content={
         "meeting_id": meeting_id,
         "status": "started",
@@ -84,14 +255,33 @@ async def stop_meeting(meeting_id: str):
     meeting["status"] = "completed"
     meeting["end_time"] = datetime.now().isoformat()
     
-    # TODO: Generate final summary using LLM
-    # meeting["summary"] = await generate_meeting_summary(meeting["transcript"])
+    # Cancel background tasks
+    if meeting_id in background_tasks:
+        for task in background_tasks[meeting_id].values():
+            task.cancel()
+        del background_tasks[meeting_id]
+    
+    # Generate final summary if not exists
+    if not meeting.get("summary") and meeting.get("transcript"):
+        result = await llm_service.summarize_meeting(
+            transcript=meeting["transcript"],
+            incremental=False
+        )
+        if result["success"]:
+            meeting["summary"] = result["summary"]
+    
+    # Broadcast meeting ended
+    await websocket_manager.send_status_update(
+        meeting_id=meeting_id,
+        status="completed",
+        message="Meeting ended"
+    )
     
     return JSONResponse(content={
         "meeting_id": meeting_id,
         "status": "completed",
         "end_time": meeting["end_time"],
-        "summary": meeting["summary"],
+        "summary": meeting.get("summary"),
     })
 
 
@@ -119,13 +309,18 @@ async def get_meeting_summary(meeting_id: str):
     
     meeting = meetings_db[meeting_id]
     
-    # TODO: Generate/update summary using LLM if not exists or if transcript updated
-    # if not meeting["summary"] or transcript_updated:
-    #     meeting["summary"] = await generate_meeting_summary(meeting["transcript"])
+    # Trigger summary generation if not exists and we have transcript
+    if not meeting.get("summary") and meeting.get("transcript"):
+        result = await llm_service.summarize_meeting(
+            transcript=meeting["transcript"],
+            incremental=False
+        )
+        if result["success"]:
+            meeting["summary"] = result["summary"]
     
     return JSONResponse(content={
         "meeting_id": meeting_id,
-        "summary": meeting["summary"] or "Summary will be available shortly...",
+        "summary": meeting.get("summary") or "Summary will be available shortly...",
         "last_updated": meeting.get("end_time") or meeting["start_time"],
     })
 
@@ -144,32 +339,64 @@ async def stream_audio(
     # Read audio data
     audio_data = await file.read()
     
-    # TODO: Process audio with STT model
-    # transcript, speaker = await process_audio_stt(audio_data)
+    # Determine audio format from filename
+    audio_format = "m4a"  # default
+    if file.filename:
+        ext = file.filename.split(".")[-1].lower()
+        if ext in ["m4a", "wav", "mp3", "ogg", "flac"]:
+            audio_format = ext
     
-    # TODO: Add speaker diarization
-    # speaker_id = await identify_speaker(audio_data)
+    # Process audio with STT service (OpenAI with diarization)
+    result = await stt_service.transcribe_with_diarization(
+        audio_data=audio_data,
+        audio_format=audio_format,
+        language=None  # Auto-detect
+    )
     
-    # For now, return placeholder
-    transcript_entry = {
-        "text": "[STT processing placeholder]",
-        "speaker": "Unknown",
-        "timestamp": datetime.now().isoformat(),
-    }
+    if not result["success"]:
+        raise HTTPException(
+            status_code=500,
+            detail=f"STT processing failed: {result.get('error', 'Unknown error')}"
+        )
     
-    # Add to meeting transcript
-    meetings_db[x_meeting_id]["transcript"].append(transcript_entry)
+    # Process each segment
+    meeting = meetings_db[x_meeting_id]
+    new_segments = []
     
-    # TODO: Extract tasks in real-time
-    # tasks = await extract_tasks(transcript_entry["text"])
-    # if tasks:
-    #     add_tasks_to_meeting(x_meeting_id, tasks)
+    for segment in result["segments"]:
+        transcript_entry = {
+            "text": segment["text"],
+            "speaker": segment["speaker"],
+            "start": segment["start"],
+            "end": segment["end"],
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        meeting["transcript"].append(transcript_entry)
+        new_segments.append(transcript_entry)
+        
+        # Broadcast transcript update via WebSocket
+        await websocket_manager.send_transcript_update(
+            meeting_id=x_meeting_id,
+            transcript_entry=transcript_entry
+        )
     
-    return JSONResponse(content={
-        "transcript": transcript_entry["text"],
-        "speaker": transcript_entry["speaker"],
-        "translation": None,  # TODO: Add translation if enabled
-    })
+    # Return latest segment info
+    if new_segments:
+        latest = new_segments[-1]
+        return JSONResponse(content={
+            "transcript": latest["text"],
+            "speaker": latest["speaker"],
+            "full_text": result["full_text"],
+            "segments": new_segments,
+        })
+    else:
+        return JSONResponse(content={
+            "transcript": "",
+            "speaker": "Unknown",
+            "full_text": "",
+            "segments": [],
+        })
 
 
 # ==================== Tasks Endpoints ====================
@@ -196,14 +423,58 @@ async def add_task(meeting_id: str, task: dict):
     task_data = {
         "task_id": task_id,
         "description": task.get("description", ""),
+        "assignee": task.get("assignee"),
         "due_date": task.get("due_date"),
         "status": "pending",
+        "priority": task.get("priority", "medium"),
         "created_at": datetime.now().isoformat(),
     }
     
-    meetings_db[meeting_id]["tasks"].append(task_data)
+    meeting = meetings_db[meeting_id]
+    meeting["tasks"].append(task_data)
+    
+    # Broadcast task update
+    await websocket_manager.send_tasks_update(
+        meeting_id=meeting_id,
+        tasks=meeting["tasks"]
+    )
     
     return JSONResponse(content=task_data)
+
+
+# ==================== Speaker Management ====================
+
+@app.post("/api/speakers/register")
+async def register_speaker(name: str, audio_file: UploadFile = File(...)):
+    """Register a known speaker with their voice sample"""
+    audio_data = await audio_file.read()
+    
+    # Save audio file temporarily
+    import tempfile
+    import os
+    
+    audio_format = "m4a"
+    if audio_file.filename:
+        ext = audio_file.filename.split(".")[-1].lower()
+        if ext in ["m4a", "wav", "mp3", "ogg", "flac"]:
+            audio_format = ext
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{audio_format}") as tmp_file:
+        tmp_file.write(audio_data)
+        tmp_file_path = tmp_file.name
+    
+    try:
+        # Register speaker with STT service
+        stt_service.register_speaker(name, tmp_file_path)
+        
+        return JSONResponse(content={
+            "success": True,
+            "message": f"Speaker '{name}' registered successfully",
+        })
+    finally:
+        # Clean up temp file
+        if os.path.exists(tmp_file_path):
+            os.unlink(tmp_file_path)
 
 
 # ==================== Person Detection Endpoints ====================
@@ -226,4 +497,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
