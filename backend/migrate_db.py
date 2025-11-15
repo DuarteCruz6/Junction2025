@@ -1,0 +1,86 @@
+"""
+Database Migration Script
+Updates the database schema to match the current models:
+1. Removes 'title' column from 'meetings' table if it exists
+2. Adds 'title' column to 'tasks' table if it doesn't exist
+3. Drops 'meeting_speakers' table if it exists
+"""
+
+import sys
+from pathlib import Path
+
+# Add backend directory to path
+backend_dir = Path(__file__).parent
+sys.path.insert(0, str(backend_dir))
+
+from sqlalchemy import text, inspect
+from models.database import engine, SessionLocal, Base
+
+def migrate_database():
+    """Apply database migrations"""
+    if engine is None:
+        print("❌ Database not configured. Set DATABASE_URL in .env")
+        return False
+    
+    print("🔄 Starting database migration...")
+    
+    try:
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            
+            # 1. Remove 'title' column from 'meetings' table if it exists
+            print("\n1. Checking 'meetings' table...")
+            if 'meetings' in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns('meetings')]
+                if 'title' in columns:
+                    print("   🗑️  Removing 'title' column from 'meetings' table...")
+                    conn.execute(text("ALTER TABLE meetings DROP COLUMN IF EXISTS title"))
+                    conn.commit()
+                    print("   ✅ 'title' column removed successfully")
+                else:
+                    print("   ✅ 'title' column doesn't exist (correct)")
+            else:
+                print("   ⚠️  'meetings' table doesn't exist (will be created on next startup)")
+            
+            # 2. Add 'title' column to 'tasks' table if it doesn't exist
+            print("\n2. Checking 'tasks' table...")
+            if 'tasks' in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns('tasks')]
+                if 'title' not in columns:
+                    print("   ➕ Adding 'title' column to 'tasks' table...")
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN title VARCHAR"))
+                    conn.commit()
+                    print("   ✅ 'title' column added successfully")
+                else:
+                    print("   ✅ 'title' column already exists")
+            else:
+                print("   ⚠️  'tasks' table doesn't exist (will be created on next startup)")
+            
+            # 3. Drop 'meeting_speakers' table if it exists
+            print("\n3. Checking 'meeting_speakers' table...")
+            if 'meeting_speakers' in inspector.get_table_names():
+                print("   🗑️  Dropping 'meeting_speakers' table...")
+                conn.execute(text("DROP TABLE IF EXISTS meeting_speakers CASCADE"))
+                conn.commit()
+                print("   ✅ 'meeting_speakers' table dropped successfully")
+            else:
+                print("   ✅ 'meeting_speakers' table doesn't exist (nothing to drop)")
+            
+            # 4. Ensure all other tables are up to date
+            print("\n4. Ensuring all tables are up to date...")
+            Base.metadata.create_all(bind=engine)
+            print("   ✅ All tables are up to date")
+            
+        print("\n✅ Database migration completed successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Migration failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+if __name__ == "__main__":
+    success = migrate_database()
+    sys.exit(0 if success else 1)
+

@@ -7,7 +7,7 @@ from typing import Optional, Dict, List
 
 # Import database models
 try:
-    from models.database import Meeting, Speaker, MeetingSpeaker, SessionLocal
+    from models.database import Meeting, Speaker, SessionLocal
     import uuid
     DB_AVAILABLE = True
 except Exception as e:
@@ -26,9 +26,9 @@ def get_meeting_from_db_or_memory(meeting_id: str) -> Optional[Dict]:
             db = SessionLocal()
             meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
             if meeting:
-                # Generate title from start_time if not set
-                title = meeting.title
-                if not title and meeting.start_time:
+                # Generate title from start_time for display
+                title = None
+                if meeting.start_time:
                     from datetime import datetime
                     title = f"Meeting {meeting.start_time.strftime('%Y-%m-%d %H:%M')}"
                 
@@ -55,7 +55,7 @@ def get_meeting_from_db_or_memory(meeting_id: str) -> Optional[Dict]:
 
 
 def _extract_and_link_speakers(meeting_id: str, transcript: List[Dict], db):
-    """Extract unique speakers from transcript and create/update speaker records and meeting links"""
+    """Extract unique speakers from transcript and create/update speaker records"""
     if not transcript:
         return
     
@@ -71,13 +71,7 @@ def _extract_and_link_speakers(meeting_id: str, transcript: List[Dict], db):
     
     print(f"[DB] Extracting speakers for meeting {meeting_id}: {speaker_names}")
     
-    # Get existing meeting-speaker links
-    existing_links = db.query(MeetingSpeaker).filter(
-        MeetingSpeaker.meeting_id == meeting_id
-    ).all()
-    existing_speaker_ids = {link.speaker_id for link in existing_links}
-    
-    # Process each speaker
+    # Process each speaker - just ensure they exist in the database
     for speaker_name in speaker_names:
         # Find or create speaker
         speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
@@ -93,16 +87,6 @@ def _extract_and_link_speakers(meeting_id: str, transcript: List[Dict], db):
             print(f"[DB] Created new speaker: {speaker_name} (ID: {speaker.id})")
         else:
             print(f"[DB] Found existing speaker: {speaker_name} (ID: {speaker.id})")
-        
-        # Create meeting-speaker link if it doesn't exist
-        if speaker.id not in existing_speaker_ids:
-            meeting_speaker = MeetingSpeaker(
-                id=str(uuid.uuid4()),
-                meeting_id=meeting_id,
-                speaker_id=speaker.id,
-            )
-            db.add(meeting_speaker)
-            print(f"[DB] Linked speaker {speaker_name} to meeting {meeting_id}")
 
 
 def save_meeting_to_db(meeting_data: dict):
@@ -114,7 +98,6 @@ def save_meeting_to_db(meeting_data: dict):
             
             if meeting:
                 # Update existing
-                meeting.title = meeting_data.get("title", meeting.title)
                 meeting.start_time = datetime.fromisoformat(meeting_data["start_time"]) if meeting_data.get("start_time") else meeting.start_time
                 meeting.end_time = datetime.fromisoformat(meeting_data["end_time"]) if meeting_data.get("end_time") else meeting.end_time
                 meeting.status = meeting_data.get("status", meeting.status)
@@ -123,16 +106,9 @@ def save_meeting_to_db(meeting_data: dict):
                 meeting.tasks = meeting_data.get("tasks", meeting.tasks)
                 meeting.updated_at = datetime.utcnow()
             else:
-                # Generate title from start_time if not provided
-                title = meeting_data.get("title")
-                if not title and meeting_data.get("start_time"):
-                    start_dt = datetime.fromisoformat(meeting_data["start_time"])
-                    title = f"Meeting {start_dt.strftime('%Y-%m-%d %H:%M')}"
-                
                 # Create new
                 meeting = Meeting(
                     id=meeting_data["meeting_id"],
-                    title=title,
                     start_time=datetime.fromisoformat(meeting_data["start_time"]) if meeting_data.get("start_time") else datetime.utcnow(),
                     end_time=datetime.fromisoformat(meeting_data["end_time"]) if meeting_data.get("end_time") else None,
                     status=meeting_data.get("status", "active"),
@@ -167,9 +143,9 @@ def get_all_meetings_from_db() -> List[Dict]:
             meetings = db.query(Meeting).all()
             result = []
             for meeting in meetings:
-                # Generate title from start_time if not set
-                title = meeting.title
-                if not title and meeting.start_time:
+                # Generate title from start_time for display
+                title = None
+                if meeting.start_time:
                     title = f"Meeting {meeting.start_time.strftime('%Y-%m-%d %H:%M')}"
                 
                 result.append({
@@ -194,19 +170,33 @@ def get_all_meetings_from_db() -> List[Dict]:
 
 
 def get_meeting_speakers(meeting_id: str) -> List[Dict]:
-    """Get all speakers for a meeting"""
+    """Get all speakers for a meeting by extracting from transcript"""
+    # Get meeting to extract speakers from transcript
+    meeting = get_meeting_from_db_or_memory(meeting_id)
+    if not meeting:
+        return []
+    
+    transcript = meeting.get("transcript", [])
+    if not transcript:
+        return []
+    
+    # Extract unique speaker names from transcript
+    speaker_names = set()
+    for segment in transcript:
+        speaker_name = segment.get("speaker", "Unknown")
+        if speaker_name and speaker_name != "Unknown":
+            speaker_names.add(speaker_name)
+    
+    if not speaker_names:
+        return []
+    
+    # Try to get speaker details from database if available
     if DB_AVAILABLE and SessionLocal:
         try:
             db = SessionLocal()
-            # Get all meeting-speaker links for this meeting
-            links = db.query(MeetingSpeaker).filter(
-                MeetingSpeaker.meeting_id == meeting_id
-            ).all()
-            
-            # Get speaker details
             speakers = []
-            for link in links:
-                speaker = db.query(Speaker).filter(Speaker.id == link.speaker_id).first()
+            for speaker_name in speaker_names:
+                speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
                 if speaker:
                     speakers.append({
                         "id": speaker.id,
@@ -214,7 +204,14 @@ def get_meeting_speakers(meeting_id: str) -> List[Dict]:
                         "audio_reference": speaker.audio_reference,
                         "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
                     })
-            
+                else:
+                    # Speaker not in database, return basic info
+                    speakers.append({
+                        "id": None,
+                        "name": speaker_name,
+                        "audio_reference": None,
+                        "created_at": None,
+                    })
             db.close()
             return speakers
         except Exception as e:
@@ -222,41 +219,42 @@ def get_meeting_speakers(meeting_id: str) -> List[Dict]:
             if 'db' in locals():
                 db.close()
     
-    # Fallback: extract speakers from transcript in memory
-    meeting = meetings_db.get(meeting_id)
-    if meeting:
-        transcript = meeting.get("transcript", [])
-        speaker_names = set()
-        for segment in transcript:
-            speaker_name = segment.get("speaker", "Unknown")
-            if speaker_name and speaker_name != "Unknown":
-                speaker_names.add(speaker_name)
-        
-        return [{"id": None, "name": name, "audio_reference": None, "created_at": None} 
-                for name in speaker_names]
-    
-    return []
+    # Fallback: return basic speaker info from transcript
+    return [{"id": None, "name": name, "audio_reference": None, "created_at": None} 
+            for name in speaker_names]
 
 
 def get_speaker_meetings(speaker_id: str) -> List[str]:
-    """Get all meeting IDs for a speaker"""
+    """Get all meeting IDs for a speaker by searching through meeting transcripts"""
+    # First, get the speaker name from the database
+    speaker_name = None
     if DB_AVAILABLE and SessionLocal:
         try:
             db = SessionLocal()
-            # Get all meeting-speaker links for this speaker
-            links = db.query(MeetingSpeaker).filter(
-                MeetingSpeaker.speaker_id == speaker_id
-            ).all()
-            
-            meeting_ids = [link.meeting_id for link in links]
+            speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+            if speaker:
+                speaker_name = speaker.name
             db.close()
-            return meeting_ids
         except Exception as e:
-            print(f"Error reading meetings for speaker from database: {e}")
+            print(f"Error reading speaker from database: {e}")
             if 'db' in locals():
                 db.close()
     
-    return []
+    if not speaker_name:
+        return []
+    
+    # Search through all meetings to find where this speaker appears
+    meetings = get_all_meetings_from_db()
+    meeting_ids = []
+    
+    for meeting in meetings:
+        transcript = meeting.get("transcript", [])
+        for segment in transcript:
+            if segment.get("speaker") == speaker_name:
+                meeting_ids.append(meeting.get("meeting_id") or meeting.get("id"))
+                break  # Found speaker in this meeting, move to next meeting
+    
+    return meeting_ids
 
 
 def get_speaker_by_name(speaker_name: str) -> Optional[Dict]:

@@ -16,14 +16,50 @@ router = APIRouter()
 
 @router.get("/api/meetings/{meeting_id}/tasks")
 async def get_meeting_tasks(meeting_id: str):
-    """Get extracted tasks from a meeting"""
+    """Get extracted tasks from a meeting (from both JSON field and tasks table)"""
     meeting = get_meeting_from_db_or_memory(meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    tasks = meeting.get("tasks", [])
+    # Get tasks from meeting's JSON field
+    json_tasks = meeting.get("tasks", [])
     
-    return JSONResponse(content={"tasks": tasks})
+    # Also get tasks from the tasks table
+    db_tasks = []
+    if SessionLocal:
+        try:
+            db = SessionLocal()
+            tasks_from_db = db.query(Task).filter(Task.meeting_id == meeting_id).all()
+            for task in tasks_from_db:
+                db_tasks.append({
+                    "task_id": task.id,
+                    "id": task.id,
+                    "meeting_id": task.meeting_id,
+                    "title": task.title,
+                    "description": task.description,
+                    "assignee": task.assignee,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "status": task.status,
+                    "priority": task.priority,
+                    "created_at": task.created_at.isoformat() if task.created_at else None,
+                })
+            db.close()
+        except Exception as e:
+            print(f"Error getting tasks from database: {e}")
+            if 'db' in locals():
+                db.close()
+    
+    # Merge tasks, prioritizing database tasks (they have IDs)
+    # Create a map of task_ids from JSON tasks to avoid duplicates
+    json_task_ids = {task.get("task_id") or task.get("id") for task in json_tasks if task.get("task_id") or task.get("id")}
+    
+    # Add JSON tasks that aren't in the database
+    for json_task in json_tasks:
+        task_id = json_task.get("task_id") or json_task.get("id")
+        if task_id and task_id not in {t["task_id"] for t in db_tasks}:
+            db_tasks.append(json_task)
+    
+    return JSONResponse(content={"tasks": db_tasks})
 
 
 @router.post("/api/meetings/{meeting_id}/tasks")
@@ -71,6 +107,7 @@ async def get_incomplete_tasks():
                 result.append({
                     "task_id": task.id,
                     "meeting_id": task.meeting_id,
+                    "title": task.title,
                     "description": task.description,
                     "assignee": task.assignee,
                     "due_date": task.due_date.isoformat() if task.due_date else None,
@@ -92,6 +129,66 @@ async def get_incomplete_tasks():
             return JSONResponse(content={"tasks": all_tasks})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get incomplete tasks: {str(e)}")
+
+
+@router.get("/api/tasks/{task_id}")
+async def get_task(task_id: str):
+    """Get a single task by ID with meeting information"""
+    try:
+        if SessionLocal:
+            db = SessionLocal()
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if not task:
+                db.close()
+                raise HTTPException(status_code=404, detail="Task not found")
+            
+            # Get meeting information
+            meeting = get_meeting_from_db_or_memory(task.meeting_id)
+            meeting_info = None
+            if meeting:
+                meeting_info = {
+                    "id": meeting.get("id"),
+                    "title": meeting.get("title"),
+                    "start_time": meeting.get("start_time"),
+                    "status": meeting.get("status"),
+                }
+            
+            task_data = {
+                "task_id": task.id,
+                "meeting_id": task.meeting_id,
+                "title": task.title,
+                "description": task.description,
+                "assignee": task.assignee,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "status": task.status,
+                "priority": task.priority,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+                "meeting": meeting_info,
+            }
+            db.close()
+            return JSONResponse(content=task_data)
+        else:
+            # Fallback: get from meetings
+            meetings = get_all_meetings_from_db()
+            for meeting in meetings:
+                tasks = meeting.get("tasks", [])
+                for task in tasks:
+                    if task.get("task_id") == task_id or task.get("id") == task_id:
+                        meeting_info = {
+                            "id": meeting.get("id"),
+                            "title": meeting.get("title"),
+                            "start_time": meeting.get("start_time"),
+                            "status": meeting.get("status"),
+                        }
+                        task_data = task.copy()
+                        task_data["meeting"] = meeting_info
+                        return JSONResponse(content=task_data)
+            raise HTTPException(status_code=404, detail="Task not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get task: {str(e)}")
 
 
 @router.patch("/api/tasks/{task_id}/status")

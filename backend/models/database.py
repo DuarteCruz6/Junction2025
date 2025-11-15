@@ -54,7 +54,6 @@ class Meeting(Base):
     __tablename__ = "meetings"
     
     id = Column(String, primary_key=True)
-    title = Column(String, nullable=True)  # Meeting title
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     status = Column(String, default="active")  # active, completed, cancelled
@@ -71,6 +70,7 @@ class Task(Base):
     
     id = Column(String, primary_key=True)
     meeting_id = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=True)  # Task title
     description = Column(Text, nullable=False)
     assignee = Column(String, nullable=True)
     due_date = Column(DateTime, nullable=True)
@@ -87,16 +87,6 @@ class Speaker(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False, unique=True)
     audio_reference = Column(Text, nullable=True)  # Path or data URL to voice sample
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class MeetingSpeaker(Base):
-    """Junction table linking meetings and speakers (many-to-many)"""
-    __tablename__ = "meeting_speakers"
-    
-    id = Column(String, primary_key=True)
-    meeting_id = Column(String, nullable=False, index=True)
-    speaker_id = Column(String, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

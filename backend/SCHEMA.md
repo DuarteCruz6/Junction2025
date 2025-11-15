@@ -68,6 +68,7 @@ Stores individual tasks extracted from meetings (normalized from JSON in meeting
 |--------|------|-------------|-------------|
 | `id` | String | PRIMARY KEY | Unique task identifier (UUID) |
 | `meeting_id` | String | NOT NULL, INDEXED | Foreign key to `meetings.id` |
+| `title` | String | NULLABLE | Task title |
 | `description` | Text | NOT NULL | Task description |
 | `assignee` | String | NULLABLE | Person assigned to the task |
 | `due_date` | DateTime | NULLABLE | Task due date |
@@ -229,6 +230,29 @@ Base.metadata.create_all(bind=engine)
 ```
 
 This happens in the `init_db()` function, which is called on application startup.
+
+**Note:** `create_all()` only creates tables that don't exist. It does NOT modify existing tables. If you need to update the schema of an existing database, use the migration script.
+
+### Running Database Migrations
+
+If you have an existing database and need to update the schema:
+
+1. **Check current schema:**
+   ```bash
+   cd backend
+   python check_db_schema.py
+   ```
+
+2. **Run migration:**
+   ```bash
+   python migrate_db.py
+   ```
+
+The migration script will:
+- Remove the `title` column from the `meetings` table (if it exists)
+- Add the `title` column to the `tasks` table (if missing)
+- Drop the `meeting_speakers` table (if it exists)
+- Ensure all other tables are up to date
 
 ---
 

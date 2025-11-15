@@ -233,7 +233,7 @@
         #menuButton {
             position: fixed;
             top: 50%;
-            right: 20px;
+            left: 20px;
             transform: translateY(-50%);
             width: 60px;
             height: 60px;
@@ -273,7 +273,8 @@
         }
 
         #menuOverlay.show #menuPanel,
-        #menuOverlay.show #closeMenu {
+        #menuOverlay.show #closeMenu,
+        #menuOverlay.show .view {
             pointer-events: auto;
         }
 
@@ -289,7 +290,7 @@
             backdrop-filter: none;
             position: fixed;
             top: 50%;
-            right: 100px;
+            left: 100px;
             transform: translateY(-50%);
         }
 
@@ -356,7 +357,7 @@
             backdrop-filter: blur(5px);
             position: fixed;
             top: 50%;
-            right: 100px;
+            right: 10px;
             transform: translateY(-50%);
             width: 400px;
             max-width: calc(100vw - 140px);
@@ -404,6 +405,14 @@
             width: 20px;
             height: 20px;
             cursor: pointer;
+        }
+
+        .task-item {
+            cursor: pointer;
+        }
+
+        .task-item:hover {
+            background: rgba(255, 255, 255, 0.15);
         }
 
         .summary-content {
@@ -509,6 +518,93 @@
 
         .transcript-segment-text {
             color: rgba(255, 255, 255, 0.9);
+        }
+
+        .task-detail {
+            color: white;
+        }
+
+        .task-detail-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .task-detail-description {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            font-size: 16px;
+        }
+
+        .task-detail-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .task-detail-info-item {
+            margin-bottom: 12px;
+        }
+
+        .task-detail-info-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .task-detail-info-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .task-detail-info-value {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .task-detail-meeting-link {
+            color: #4CAF50;
+            cursor: pointer;
+            text-decoration: underline;
+            transition: color 0.3s ease;
+        }
+
+        .task-detail-meeting-link:hover {
+            color: #66BB6A;
+        }
+
+        .task-detail-button {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid rgba(76, 175, 80, 0.5);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .task-detail-button:hover {
+            background: rgba(76, 175, 80, 0.5);
+        }
+
+        .task-detail-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .task-detail-button.completed {
+            background: rgba(158, 158, 158, 0.3);
+            border-color: rgba(158, 158, 158, 0.5);
         }
 
         .settings-form {
@@ -657,35 +753,41 @@
                     ⚙️
                 </button>
             </div>
+        </div>
 
-            <!-- Tasks View -->
-            <div id="tasksView" class="view">
-                <div class="view-header">Tasks</div>
-                <div id="tasksContent"></div>
-            </div>
+        <!-- Tasks View -->
+        <div id="tasksView" class="view">
+            <div class="view-header">Tasks</div>
+            <div id="tasksContent"></div>
+        </div>
 
-            <!-- Summarization View -->
-            <div id="summarizationView" class="view">
-                <div class="view-header">Meeting Summary</div>
-                <div id="summarizationContent"></div>
-            </div>
+        <!-- Summarization View -->
+        <div id="summarizationView" class="view">
+            <div class="view-header">Meeting Summary</div>
+            <div id="summarizationContent"></div>
+        </div>
 
-            <!-- History View -->
-            <div id="historyView" class="view">
-                <div class="view-header">Meeting History</div>
-                <div id="historyContent"></div>
-            </div>
+        <!-- History View -->
+        <div id="historyView" class="view">
+            <div class="view-header">Meeting History</div>
+            <div id="historyContent"></div>
+        </div>
 
-            <!-- Meeting Detail View -->
-            <div id="meetingDetailView" class="view">
-                <div id="meetingDetailContent"></div>
-            </div>
+        <!-- Meeting Detail View -->
+        <div id="meetingDetailView" class="view">
+            <div id="meetingDetailContent"></div>
+        </div>
 
-            <!-- Settings View -->
-            <div id="settingsView" class="view">
-                <div class="view-header">Settings</div>
-                <div id="settingsContent"></div>
-            </div>
+        <!-- Task Detail View -->
+        <div id="taskDetailView" class="view">
+            <div class="view-header">Task Details</div>
+            <div id="taskDetailContent"></div>
+        </div>
+
+        <!-- Settings View -->
+        <div id="settingsView" class="view">
+            <div class="view-header">Settings</div>
+            <div id="settingsContent"></div>
         </div>
     </div>
 
@@ -1375,6 +1477,7 @@
         const summarizationView = document.getElementById('summarizationView');
         const historyView = document.getElementById('historyView');
         const meetingDetailView = document.getElementById('meetingDetailView');
+        const taskDetailView = document.getElementById('taskDetailView');
         const settingsView = document.getElementById('settingsView');
 
         // Menu state
@@ -1509,11 +1612,15 @@
                 content.innerHTML = tasks.map(task => {
                     const isCompleted = task.status === 'completed';
                     const taskId = task.task_id || task.id;
+                    const taskTitle = task.title || task.description || 'Task';
+                    const taskDescription = task.description || 'No description';
                     return `
-                        <div class="task-item ${isCompleted ? 'completed' : ''}">
+                        <div class="task-item ${isCompleted ? 'completed' : ''}" onclick="showTaskDetail('${taskId}')">
                             <input type="checkbox" class="task-checkbox" ${isCompleted ? 'checked' : ''} 
-                                   data-task-id="${taskId}" onchange="toggleTaskStatus('${taskId}', this.checked)">
-                            <div class="task-description">${task.description || 'No description'}</div>
+                                   data-task-id="${taskId}" 
+                                   onclick="event.stopPropagation(); toggleTaskStatus('${taskId}', this.checked)">
+                            ${task.title ? `<div class="task-title" style="font-weight: 600; margin-bottom: 4px;">${task.title}</div>` : ''}
+                            <div class="task-description">${taskDescription}</div>
                             <div class="task-meta">
                                 ${task.assignee ? `<span>Assignee: ${task.assignee}</span>` : ''}
                                 ${task.priority ? `<span>Priority: ${task.priority}</span>` : ''}
@@ -1538,8 +1645,102 @@
                     body: JSON.stringify({ status })
                 });
                 await loadTasks(); // Reload tasks
+                // If task detail view is open, reload it
+                if (currentView === taskDetailView) {
+                    await showTaskDetail(taskId);
+                }
             } catch (error) {
                 console.error('Error updating task status:', error);
+                showNotification('Error updating task', 3000);
+            }
+        };
+
+        // Show task detail
+        window.showTaskDetail = async function(taskId) {
+            const content = document.getElementById('taskDetailContent');
+            content.innerHTML = '<div class="empty-state">Loading task details...</div>';
+            showView(taskDetailView, tasksButton);
+
+            try {
+                const taskRes = await fetch(`${BACKEND_URL}/api/tasks/${taskId}`);
+                const task = await taskRes.json();
+                
+                const isCompleted = task.status === 'completed';
+                const meeting = task.meeting || {};
+                const meetingTitle = meeting.title || `Meeting ${meeting.id ? meeting.id.substring(0, 8) : 'Unknown'}`;
+                const meetingDate = meeting.start_time ? new Date(meeting.start_time).toLocaleString() : 'Unknown date';
+
+                content.innerHTML = `
+                    <div class="task-detail">
+                        <div class="task-detail-title">${task.description || 'Task'}</div>
+                        <div class="task-detail-info">
+                            <div class="task-detail-info-item">
+                                <div class="task-detail-info-label">Status</div>
+                                <div class="task-detail-info-value">${task.status || 'pending'}</div>
+                            </div>
+                            ${task.assignee ? `
+                            <div class="task-detail-info-item">
+                                <div class="task-detail-info-label">Assignee</div>
+                                <div class="task-detail-info-value">${task.assignee}</div>
+                            </div>
+                            ` : ''}
+                            ${task.priority ? `
+                            <div class="task-detail-info-item">
+                                <div class="task-detail-info-label">Priority</div>
+                                <div class="task-detail-info-value">${task.priority}</div>
+                            </div>
+                            ` : ''}
+                            ${task.due_date ? `
+                            <div class="task-detail-info-item">
+                                <div class="task-detail-info-label">Due Date</div>
+                                <div class="task-detail-info-value">${new Date(task.due_date).toLocaleDateString()}</div>
+                            </div>
+                            ` : ''}
+                            ${task.meeting_id ? `
+                            <div class="task-detail-info-item">
+                                <div class="task-detail-info-label">Meeting</div>
+                                <div class="task-detail-info-value">
+                                    <span class="task-detail-meeting-link" onclick="showMeetingDetail('${task.meeting_id}')">
+                                        ${meetingTitle} - ${meetingDate}
+                                    </span>
+                                </div>
+                            </div>
+                            ` : ''}
+                            ${task.created_at ? `
+                            <div class="task-detail-info-item">
+                                <div class="task-detail-info-label">Created</div>
+                                <div class="task-detail-info-value">${new Date(task.created_at).toLocaleString()}</div>
+                            </div>
+                            ` : ''}
+                        </div>
+                        <button class="task-detail-button ${isCompleted ? 'completed' : ''}" 
+                                ${isCompleted ? 'disabled' : ''} 
+                                onclick="markTaskAsCompleted('${taskId}')">
+                            ${isCompleted ? 'Task Completed' : 'Mark as Completed'}
+                        </button>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading task detail:', error);
+                content.innerHTML = '<div class="empty-state">Error loading task details</div>';
+            }
+        };
+
+        // Mark task as completed
+        window.markTaskAsCompleted = async function(taskId) {
+            try {
+                await fetch(`${BACKEND_URL}/api/tasks/${taskId}/status`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'completed' })
+                });
+                // Reload task detail
+                await showTaskDetail(taskId);
+                // Reload tasks list
+                await loadTasks();
+                showNotification('Task marked as completed', 2000);
+            } catch (error) {
+                console.error('Error marking task as completed:', error);
                 showNotification('Error updating task', 3000);
             }
         };
@@ -1793,6 +1994,7 @@
 
                 if (response.ok) {
                     showNotification('Settings saved successfully', 3000);
+                    hideAllViews();
                 } else {
                     throw new Error('Failed to save settings');
                 }
