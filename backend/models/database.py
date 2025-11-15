@@ -54,6 +54,7 @@ class Meeting(Base):
     __tablename__ = "meetings"
     
     id = Column(String, primary_key=True)
+    title = Column(String, nullable=True)  # Meeting title
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     status = Column(String, default="active")  # active, completed, cancelled

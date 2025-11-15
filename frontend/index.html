@@ -228,6 +228,396 @@
         #transcript::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.5);
         }
+
+        /* Menu Styles */
+        #menuButton {
+            position: fixed;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            width: 60px;
+            height: 60px;
+            background: rgba(76, 175, 80, 0.9);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 10001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        #menuButton:hover {
+            background: rgba(76, 175, 80, 1);
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        #menuOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            z-index: 10002;
+            display: none;
+            pointer-events: none;
+        }
+
+        #menuOverlay.show {
+            display: block;
+        }
+
+        #menuOverlay.show #menuPanel,
+        #menuOverlay.show #closeMenu {
+            pointer-events: auto;
+        }
+
+        #menuPanel {
+            background: transparent;
+            border-radius: 0;
+            padding: 0;
+            width: auto;
+            max-width: none;
+            max-height: none;
+            overflow: visible;
+            box-shadow: none;
+            backdrop-filter: none;
+            position: fixed;
+            top: 50%;
+            right: 100px;
+            transform: translateY(-50%);
+        }
+
+        #menuHeader {
+            display: none;
+        }
+
+        #closeMenu {
+            display: none !important;
+        }
+
+        .menu-icons {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            align-items: center;
+            padding: 0;
+        }
+
+        .menu-icon-button {
+            background: transparent;
+            border: none;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 0;
+            font-size: 32px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+        }
+
+        .menu-icon-button:hover {
+            transform: scale(1.15);
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7));
+        }
+
+        .menu-icon-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .menu-icon-button.active {
+            transform: scale(1.2);
+            filter: drop-shadow(0 4px 12px rgba(76, 175, 80, 0.8));
+        }
+
+        .menu-icon-tooltip {
+            display: none;
+        }
+
+        /* View Styles */
+        .view {
+            display: none;
+            margin-top: 24px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 16px;
+            box-shadow: none;
+            backdrop-filter: blur(5px);
+            position: fixed;
+            top: 50%;
+            right: 100px;
+            transform: translateY(-50%);
+            width: 400px;
+            max-width: calc(100vw - 140px);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        .view-header {
+            color: white;
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .task-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            color: white;
+        }
+
+        .task-item.completed {
+            opacity: 0.6;
+        }
+
+        .task-description {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .task-meta {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            gap: 16px;
+        }
+
+        .task-checkbox {
+            margin-right: 12px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .summary-content {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            color: white;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .history-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+        }
+
+        .history-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(4px);
+        }
+
+        .history-item-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .history-item-date {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .meeting-detail {
+            color: white;
+        }
+
+        .meeting-detail-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .meeting-detail-summary {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .transcript-button {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid rgba(76, 175, 80, 0.5);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .transcript-button:hover {
+            background: rgba(76, 175, 80, 0.5);
+        }
+
+        .transcript-content {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .transcript-segment {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .transcript-segment:last-child {
+            border-bottom: none;
+        }
+
+        .transcript-speaker-name {
+            font-weight: 600;
+            color: #4CAF50;
+            margin-bottom: 4px;
+        }
+
+        .transcript-segment-text {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .settings-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .settings-field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .settings-field label {
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .settings-field input,
+        .settings-field select {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .settings-field input:focus,
+        .settings-field select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .settings-field input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .language-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .language-tag {
+            background: rgba(76, 175, 80, 0.3);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .language-tag-remove {
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .save-button {
+            background: rgba(76, 175, 80, 0.8);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 8px;
+        }
+
+        .save-button:hover {
+            background: rgba(76, 175, 80, 1);
+        }
+
+        .add-language-input {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .add-language-input input {
+            flex: 1;
+        }
+
+        .add-language-button {
+            background: rgba(76, 175, 80, 0.5);
+            border: none;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .add-language-button:hover {
+            background: rgba(76, 175, 80, 0.7);
+        }
+
+        .empty-state {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            padding: 40px;
+        }
     </style>
 </head>
 <body>
@@ -245,6 +635,59 @@
     
     <div id="transcript" class="hidden"></div>
     <div id="notification"></div>
+
+    <!-- Menu Button -->
+    <button id="menuButton">☰</button>
+
+    <!-- Menu Overlay -->
+    <div id="menuOverlay">
+        <button id="closeMenu">×</button>
+        <div id="menuPanel">
+            <div class="menu-icons">
+                <button class="menu-icon-button" id="tasksButton" title="Tasks">
+                    ✓
+                </button>
+                <button class="menu-icon-button" id="summarizationButton" style="display: none;" title="Summarization">
+                    📄
+                </button>
+                <button class="menu-icon-button" id="historyButton" style="display: none;" title="History">
+                    🕐
+                </button>
+                <button class="menu-icon-button" id="settingsButton" title="Settings">
+                    ⚙️
+                </button>
+            </div>
+
+            <!-- Tasks View -->
+            <div id="tasksView" class="view">
+                <div class="view-header">Tasks</div>
+                <div id="tasksContent"></div>
+            </div>
+
+            <!-- Summarization View -->
+            <div id="summarizationView" class="view">
+                <div class="view-header">Meeting Summary</div>
+                <div id="summarizationContent"></div>
+            </div>
+
+            <!-- History View -->
+            <div id="historyView" class="view">
+                <div class="view-header">Meeting History</div>
+                <div id="historyContent"></div>
+            </div>
+
+            <!-- Meeting Detail View -->
+            <div id="meetingDetailView" class="view">
+                <div id="meetingDetailContent"></div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="settingsView" class="view">
+                <div class="view-header">Settings</div>
+                <div id="settingsContent"></div>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Configuration - matching test_audio_streaming.py
@@ -918,6 +1361,454 @@
                 localStream.getTracks().forEach(track => track.stop());
             }
         });
+
+        // ========== MENU FUNCTIONALITY ==========
+        const menuButton = document.getElementById('menuButton');
+        const menuOverlay = document.getElementById('menuOverlay');
+        const closeMenu = document.getElementById('closeMenu');
+        const tasksButton = document.getElementById('tasksButton');
+        const summarizationButton = document.getElementById('summarizationButton');
+        const historyButton = document.getElementById('historyButton');
+        const settingsButton = document.getElementById('settingsButton');
+        
+        const tasksView = document.getElementById('tasksView');
+        const summarizationView = document.getElementById('summarizationView');
+        const historyView = document.getElementById('historyView');
+        const meetingDetailView = document.getElementById('meetingDetailView');
+        const settingsView = document.getElementById('settingsView');
+
+        // Menu state
+        let currentView = null;
+        const USER_ID = 'default_user'; // Since we only have one user
+
+        // Open/close menu
+        menuButton.addEventListener('click', () => {
+            if (currentView) {
+                // If a component is open, close everything (component and menu)
+                hideAllViews();
+                menuOverlay.classList.remove('show');
+            } else {
+                // Otherwise, toggle the menu
+                if (menuOverlay.classList.contains('show')) {
+                    menuOverlay.classList.remove('show');
+                } else {
+                    menuOverlay.classList.add('show');
+                    updateMenuButtonsVisibility();
+                }
+            }
+        });
+
+        // Close menu functionality removed - icons now toggle
+
+        menuOverlay.addEventListener('click', (e) => {
+            if (e.target === menuOverlay) {
+                menuOverlay.classList.remove('show');
+                hideAllViews();
+            }
+        });
+
+        // Update menu buttons visibility based on AI toggle
+        function updateMenuButtonsVisibility() {
+            const aiOn = aiToggle.checked;
+            summarizationButton.style.display = aiOn ? 'block' : 'none';
+            historyButton.style.display = aiOn ? 'none' : 'block';
+        }
+
+        // Hide all views
+        function hideAllViews() {
+            document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
+            document.querySelectorAll('.menu-icon-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            currentView = null;
+        }
+
+        // Show a specific view
+        function showView(viewElement, buttonElement) {
+            hideAllViews();
+            viewElement.classList.add('active');
+            buttonElement.classList.add('active');
+            currentView = viewElement;
+        }
+
+        // Tasks Button
+        tasksButton.addEventListener('click', async () => {
+            if (currentView === tasksView) {
+                // If already showing, close only the component (keep menu open)
+                hideAllViews();
+            } else {
+                showView(tasksView, tasksButton);
+                await loadTasks();
+            }
+        });
+
+        // Summarization Button
+        summarizationButton.addEventListener('click', async () => {
+            if (currentView === summarizationView) {
+                // If already showing, close only the component (keep menu open)
+                hideAllViews();
+            } else {
+                showView(summarizationView, summarizationButton);
+                await loadSummarization();
+            }
+        });
+
+        // History Button
+        historyButton.addEventListener('click', async () => {
+            if (currentView === historyView) {
+                // If already showing, close only the component (keep menu open)
+                hideAllViews();
+            } else {
+                showView(historyView, historyButton);
+                await loadHistory();
+            }
+        });
+
+        // Settings Button
+        settingsButton.addEventListener('click', async () => {
+            if (currentView === settingsView) {
+                // If already showing, close only the component (keep menu open)
+                hideAllViews();
+            } else {
+                showView(settingsView, settingsButton);
+                await loadSettings();
+            }
+        });
+
+        // Load Tasks
+        async function loadTasks() {
+            const content = document.getElementById('tasksContent');
+            content.innerHTML = '<div class="empty-state">Loading tasks...</div>';
+
+            try {
+                const aiOn = aiToggle.checked;
+                let tasks = [];
+
+                if (aiOn) {
+                    // Get tasks from current meeting
+                    const activeMeetingRes = await fetch(`${BACKEND_URL}/api/meetings/active`);
+                    const activeMeetingData = await activeMeetingRes.json();
+                    
+                    if (activeMeetingData.meeting_id) {
+                        const tasksRes = await fetch(`${BACKEND_URL}/api/meetings/${activeMeetingData.meeting_id}/tasks`);
+                        const tasksData = await tasksRes.json();
+                        tasks = tasksData.tasks || [];
+                    }
+                } else {
+                    // Get all incomplete tasks
+                    const tasksRes = await fetch(`${BACKEND_URL}/api/tasks/incomplete`);
+                    const tasksData = await tasksRes.json();
+                    tasks = tasksData.tasks || [];
+                }
+
+                if (tasks.length === 0) {
+                    content.innerHTML = '<div class="empty-state">No tasks found</div>';
+                    return;
+                }
+
+                content.innerHTML = tasks.map(task => {
+                    const isCompleted = task.status === 'completed';
+                    const taskId = task.task_id || task.id;
+                    return `
+                        <div class="task-item ${isCompleted ? 'completed' : ''}">
+                            <input type="checkbox" class="task-checkbox" ${isCompleted ? 'checked' : ''} 
+                                   data-task-id="${taskId}" onchange="toggleTaskStatus('${taskId}', this.checked)">
+                            <div class="task-description">${task.description || 'No description'}</div>
+                            <div class="task-meta">
+                                ${task.assignee ? `<span>Assignee: ${task.assignee}</span>` : ''}
+                                ${task.priority ? `<span>Priority: ${task.priority}</span>` : ''}
+                                ${task.due_date ? `<span>Due: ${new Date(task.due_date).toLocaleDateString()}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+                content.innerHTML = '<div class="empty-state">Error loading tasks</div>';
+            }
+        }
+
+        // Toggle task status
+        window.toggleTaskStatus = async function(taskId, completed) {
+            try {
+                const status = completed ? 'completed' : 'pending';
+                await fetch(`${BACKEND_URL}/api/tasks/${taskId}/status`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                await loadTasks(); // Reload tasks
+            } catch (error) {
+                console.error('Error updating task status:', error);
+                showNotification('Error updating task', 3000);
+            }
+        };
+
+        // Load Summarization
+        async function loadSummarization() {
+            const content = document.getElementById('summarizationContent');
+            content.innerHTML = '<div class="empty-state">Loading summary...</div>';
+
+            try {
+                const activeMeetingRes = await fetch(`${BACKEND_URL}/api/meetings/active`);
+                const activeMeetingData = await activeMeetingRes.json();
+                
+                if (!activeMeetingData.meeting_id) {
+                    content.innerHTML = '<div class="empty-state">No active meeting</div>';
+                    return;
+                }
+
+                const summaryRes = await fetch(`${BACKEND_URL}/api/meetings/${activeMeetingData.meeting_id}/summary`);
+                const summaryData = await summaryRes.json();
+                
+                const summary = summaryData.summary || 'Summary will be available shortly...';
+                content.innerHTML = `<div class="summary-content">${summary}</div>`;
+            } catch (error) {
+                console.error('Error loading summary:', error);
+                content.innerHTML = '<div class="empty-state">Error loading summary</div>';
+            }
+        }
+
+        // Load History
+        async function loadHistory() {
+            const content = document.getElementById('historyContent');
+            content.innerHTML = '<div class="empty-state">Loading history...</div>';
+
+            try {
+                const meetingsRes = await fetch(`${BACKEND_URL}/api/meetings`);
+                const meetingsData = await meetingsRes.json();
+                const meetings = meetingsData.meetings || [];
+
+                if (meetings.length === 0) {
+                    content.innerHTML = '<div class="empty-state">No meetings found</div>';
+                    return;
+                }
+
+                content.innerHTML = `
+                    <div class="history-list">
+                        ${meetings.map(meeting => {
+                            const title = meeting.title || `Meeting ${new Date(meeting.start_time).toLocaleString()}`;
+                            const date = new Date(meeting.start_time).toLocaleString();
+                            return `
+                                <div class="history-item" onclick="showMeetingDetail('${meeting.meeting_id}')">
+                                    <div class="history-item-title">${title}</div>
+                                    <div class="history-item-date">${date}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading history:', error);
+                content.innerHTML = '<div class="empty-state">Error loading history</div>';
+            }
+        }
+
+        // Show meeting detail
+        window.showMeetingDetail = async function(meetingId) {
+            const content = document.getElementById('meetingDetailContent');
+            content.innerHTML = '<div class="empty-state">Loading meeting details...</div>';
+            showView(meetingDetailView, historyButton);
+
+            try {
+                const meetingRes = await fetch(`${BACKEND_URL}/api/meetings/${meetingId}`);
+                const meeting = await meetingRes.json();
+                
+                const title = meeting.title || `Meeting ${new Date(meeting.start_time).toLocaleString()}`;
+                const summary = meeting.summary || 'No summary available';
+                let transcriptVisible = false;
+
+                content.innerHTML = `
+                    <div class="meeting-detail">
+                        <div class="meeting-detail-title">${title}</div>
+                        <div class="meeting-detail-summary">${summary}</div>
+                        <button class="transcript-button" onclick="toggleTranscript('${meetingId}', this)">
+                            ${transcriptVisible ? 'Hide' : 'Show'} Transcript
+                        </button>
+                        <div id="transcriptContainer" style="display: none;">
+                            <div class="transcript-content" id="transcriptContent"></div>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading meeting detail:', error);
+                content.innerHTML = '<div class="empty-state">Error loading meeting details</div>';
+            }
+        };
+
+        // Toggle transcript
+        window.toggleTranscript = async function(meetingId, button) {
+            const container = document.getElementById('transcriptContainer');
+            const transcriptContent = document.getElementById('transcriptContent');
+            const isVisible = container.style.display !== 'none';
+
+            if (isVisible) {
+                container.style.display = 'none';
+                button.textContent = 'Show Transcript';
+            } else {
+                container.style.display = 'block';
+                button.textContent = 'Hide Transcript';
+                
+                if (!transcriptContent.innerHTML) {
+                    try {
+                        const transcriptRes = await fetch(`${BACKEND_URL}/api/meetings/${meetingId}/transcript`);
+                        const transcriptData = await transcriptRes.json();
+                        const transcript = transcriptData.transcript || [];
+
+                        if (transcript.length === 0) {
+                            transcriptContent.innerHTML = '<div class="empty-state">No transcript available</div>';
+                        } else {
+                            transcriptContent.innerHTML = transcript.map(segment => `
+                                <div class="transcript-segment">
+                                    <div class="transcript-speaker-name">${segment.speaker || 'Unknown'}</div>
+                                    <div class="transcript-segment-text">${segment.text || ''}</div>
+                                </div>
+                            `).join('');
+                        }
+                    } catch (error) {
+                        console.error('Error loading transcript:', error);
+                        transcriptContent.innerHTML = '<div class="empty-state">Error loading transcript</div>';
+                    }
+                }
+            }
+        };
+
+        // Load Settings
+        async function loadSettings() {
+            const content = document.getElementById('settingsContent');
+            content.innerHTML = '<div class="empty-state">Loading settings...</div>';
+
+            try {
+                const settingsRes = await fetch(`${BACKEND_URL}/api/settings/${USER_ID}`);
+                const settings = await settingsRes.json();
+
+                const preferredLanguage = settings.preferred_language || '';
+                const spokenLanguages = settings.spoken_languages || [];
+
+                content.innerHTML = `
+                    <form class="settings-form" onsubmit="saveSettings(event)">
+                        <div class="settings-field">
+                            <label>Preferred Language</label>
+                            <select id="preferredLanguage">
+                                <option value="">Select language</option>
+                                <option value="en" ${preferredLanguage === 'en' ? 'selected' : ''}>English</option>
+                                <option value="pt" ${preferredLanguage === 'pt' ? 'selected' : ''}>Portuguese</option>
+                                <option value="es" ${preferredLanguage === 'es' ? 'selected' : ''}>Spanish</option>
+                                <option value="fr" ${preferredLanguage === 'fr' ? 'selected' : ''}>French</option>
+                                <option value="de" ${preferredLanguage === 'de' ? 'selected' : ''}>German</option>
+                                <option value="it" ${preferredLanguage === 'it' ? 'selected' : ''}>Italian</option>
+                                <option value="ja" ${preferredLanguage === 'ja' ? 'selected' : ''}>Japanese</option>
+                                <option value="zh" ${preferredLanguage === 'zh' ? 'selected' : ''}>Chinese</option>
+                                <option value="ko" ${preferredLanguage === 'ko' ? 'selected' : ''}>Korean</option>
+                            </select>
+                        </div>
+                        <div class="settings-field">
+                            <label>Spoken Languages</label>
+                            <div class="language-tags" id="languageTags">
+                                ${spokenLanguages.map(lang => `
+                                    <span class="language-tag">
+                                        ${lang}
+                                        <span class="language-tag-remove" onclick="removeLanguage('${lang}')">×</span>
+                                    </span>
+                                `).join('')}
+                            </div>
+                            <div class="add-language-input">
+                                <select id="newLanguage">
+                                    <option value="">Add language</option>
+                                    <option value="en">English</option>
+                                    <option value="pt">Portuguese</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="fr">French</option>
+                                    <option value="de">German</option>
+                                    <option value="it">Italian</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="ko">Korean</option>
+                                </select>
+                                <button type="button" class="add-language-button" onclick="addLanguage()">Add</button>
+                            </div>
+                        </div>
+                        <button type="submit" class="save-button">Save Settings</button>
+                    </form>
+                `;
+            } catch (error) {
+                console.error('Error loading settings:', error);
+                content.innerHTML = '<div class="empty-state">Error loading settings</div>';
+            }
+        }
+
+        // Add language
+        window.addLanguage = function() {
+            const select = document.getElementById('newLanguage');
+            const lang = select.value;
+            if (!lang) return;
+
+            const tags = document.getElementById('languageTags');
+            const existingLangs = Array.from(tags.querySelectorAll('.language-tag')).map(tag => 
+                tag.textContent.trim().split('×')[0].trim()
+            );
+
+            if (existingLangs.includes(lang)) {
+                showNotification('Language already added', 2000);
+                return;
+            }
+
+            const tag = document.createElement('span');
+            tag.className = 'language-tag';
+            tag.innerHTML = `${lang} <span class="language-tag-remove" onclick="removeLanguage('${lang}')">×</span>`;
+            tags.appendChild(tag);
+            select.value = '';
+        };
+
+        // Remove language
+        window.removeLanguage = function(lang) {
+            const tags = document.getElementById('languageTags');
+            const tagElements = tags.querySelectorAll('.language-tag');
+            tagElements.forEach(tag => {
+                if (tag.textContent.includes(lang)) {
+                    tag.remove();
+                }
+            });
+        };
+
+        // Save settings
+        window.saveSettings = async function(event) {
+            event.preventDefault();
+            
+            const preferredLanguage = document.getElementById('preferredLanguage').value;
+            const tags = document.getElementById('languageTags');
+            const spokenLanguages = Array.from(tags.querySelectorAll('.language-tag')).map(tag => 
+                tag.textContent.trim().split('×')[0].trim()
+            );
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/settings/${USER_ID}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        preferred_language: preferredLanguage || null,
+                        spoken_languages: spokenLanguages
+                    })
+                });
+
+                if (response.ok) {
+                    showNotification('Settings saved successfully', 3000);
+                } else {
+                    throw new Error('Failed to save settings');
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                showNotification('Error saving settings', 3000);
+            }
+        };
+
+        // Update menu buttons when AI toggle changes
+        aiToggle.addEventListener('change', () => {
+            updateMenuButtonsVisibility();
+        });
+
+        // Initialize menu buttons visibility
+        updateMenuButtonsVisibility();
     </script>
 </body>
 </html>

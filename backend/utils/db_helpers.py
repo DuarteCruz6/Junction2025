@@ -26,8 +26,15 @@ def get_meeting_from_db_or_memory(meeting_id: str) -> Optional[Dict]:
             db = SessionLocal()
             meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
             if meeting:
+                # Generate title from start_time if not set
+                title = meeting.title
+                if not title and meeting.start_time:
+                    from datetime import datetime
+                    title = f"Meeting {meeting.start_time.strftime('%Y-%m-%d %H:%M')}"
+                
                 result = {
                     "meeting_id": meeting.id,
+                    "title": title,
                     "start_time": meeting.start_time.isoformat() if meeting.start_time else None,
                     "end_time": meeting.end_time.isoformat() if meeting.end_time else None,
                     "status": meeting.status,
@@ -107,6 +114,7 @@ def save_meeting_to_db(meeting_data: dict):
             
             if meeting:
                 # Update existing
+                meeting.title = meeting_data.get("title", meeting.title)
                 meeting.start_time = datetime.fromisoformat(meeting_data["start_time"]) if meeting_data.get("start_time") else meeting.start_time
                 meeting.end_time = datetime.fromisoformat(meeting_data["end_time"]) if meeting_data.get("end_time") else meeting.end_time
                 meeting.status = meeting_data.get("status", meeting.status)
@@ -115,9 +123,16 @@ def save_meeting_to_db(meeting_data: dict):
                 meeting.tasks = meeting_data.get("tasks", meeting.tasks)
                 meeting.updated_at = datetime.utcnow()
             else:
+                # Generate title from start_time if not provided
+                title = meeting_data.get("title")
+                if not title and meeting_data.get("start_time"):
+                    start_dt = datetime.fromisoformat(meeting_data["start_time"])
+                    title = f"Meeting {start_dt.strftime('%Y-%m-%d %H:%M')}"
+                
                 # Create new
                 meeting = Meeting(
                     id=meeting_data["meeting_id"],
+                    title=title,
                     start_time=datetime.fromisoformat(meeting_data["start_time"]) if meeting_data.get("start_time") else datetime.utcnow(),
                     end_time=datetime.fromisoformat(meeting_data["end_time"]) if meeting_data.get("end_time") else None,
                     status=meeting_data.get("status", "active"),
@@ -152,8 +167,14 @@ def get_all_meetings_from_db() -> List[Dict]:
             meetings = db.query(Meeting).all()
             result = []
             for meeting in meetings:
+                # Generate title from start_time if not set
+                title = meeting.title
+                if not title and meeting.start_time:
+                    title = f"Meeting {meeting.start_time.strftime('%Y-%m-%d %H:%M')}"
+                
                 result.append({
                     "meeting_id": meeting.id,
+                    "title": title,
                     "start_time": meeting.start_time.isoformat() if meeting.start_time else None,
                     "end_time": meeting.end_time.isoformat() if meeting.end_time else None,
                     "status": meeting.status,

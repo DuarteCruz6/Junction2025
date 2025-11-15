@@ -174,3 +174,48 @@ async def get_meeting_summary(meeting_id: str):
         "last_updated": meeting.get("end_time") or meeting["start_time"],
     })
 
+
+@router.get("/api/meetings/active")
+async def get_active_meeting():
+    """Get the current active meeting ID"""
+    # Find active meeting in database
+    try:
+        from models.database import Meeting, SessionLocal
+        if SessionLocal:
+            db = SessionLocal()
+            active_meeting = db.query(Meeting).filter(Meeting.status == "active").first()
+            db.close()
+            
+            if active_meeting:
+                return JSONResponse(content={
+                    "meeting_id": active_meeting.id,
+                    "status": "active",
+                    "start_time": active_meeting.start_time.isoformat() if active_meeting.start_time else None,
+                })
+        
+        # Fallback: check in-memory storage
+        for meeting_id, meeting_data in meetings_db.items():
+            if meeting_data.get("status") == "active":
+                return JSONResponse(content={
+                    "meeting_id": meeting_id,
+                    "status": "active",
+                    "start_time": meeting_data.get("start_time"),
+                })
+        
+        return JSONResponse(content={"meeting_id": None, "status": "no_active_meeting"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get active meeting: {str(e)}")
+
+
+@router.get("/api/meetings/{meeting_id}/transcript")
+async def get_meeting_transcript(meeting_id: str):
+    """Get meeting transcript"""
+    meeting = get_meeting_from_db_or_memory(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    return JSONResponse(content={
+        "meeting_id": meeting_id,
+        "transcript": meeting.get("transcript", []),
+    })
+
