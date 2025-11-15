@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera & Microphone Test</title>
+    <title>Camera</title>
     <style>
         * {
             margin: 0;
@@ -12,45 +12,12 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 30px;
-            max-width: 900px;
-            width: 100%;
-        }
-
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-
-        .subtitle {
-            color: #666;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .video-container {
-            position: relative;
-            width: 100%;
-            max-width: 800px;
-            margin: 0 auto 20px;
-            border-radius: 15px;
-            overflow: hidden;
+            margin: 0;
+            padding: 0;
             background: #000;
-            aspect-ratio: 16 / 9;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
         }
 
         #videoElement {
@@ -58,175 +25,25 @@
             height: 100%;
             object-fit: cover;
             display: block;
-        }
-
-        .controls {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-
-        button {
-            padding: 12px 24px;
-            font-size: 16px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        button:active {
-            transform: translateY(0);
-        }
-
-        .btn-start {
-            background: #4CAF50;
-            color: white;
-        }
-
-        .btn-start:hover {
-            background: #45a049;
-        }
-
-        .btn-stop {
-            background: #f44336;
-            color: white;
-        }
-
-        .btn-stop:hover {
-            background: #da190b;
-        }
-
-        .btn-stop:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .status {
-            text-align: center;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-
-        .status-info {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-
-        .status-success {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .status-error {
-            background: #ffebee;
-            color: #c62828;
-        }
-
-        .mic-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            background: #f5f5f5;
-            border-radius: 20px;
-            margin-top: 10px;
-        }
-
-        .mic-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #4CAF50;
-            animation: pulse 2s infinite;
-        }
-
-        .mic-dot.muted {
-            background: #f44336;
-            animation: none;
-        }
-
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .error-message {
-            color: #c62828;
-            margin-top: 10px;
-            padding: 10px;
-            background: #ffebee;
-            border-radius: 5px;
-            display: none;
+            transform: scaleX(-1);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Camera & Microphone Access</h1>
-        <p class="subtitle">Click "Start Camera & Microphone" to begin</p>
-
-        <div class="video-container">
-            <video id="videoElement" autoplay playsinline></video>
-        </div>
-
-        <div class="controls">
-            <button id="startBtn" class="btn-start" onclick="startCameraAndMicrophone()">
-                Start Camera & Microphone
-            </button>
-            <button id="stopBtn" class="btn-stop" onclick="stopCameraAndMicrophone()" disabled>
-                Stop
-            </button>
-        </div>
-
-        <div id="status" class="status status-info">
-            Ready to start. Click the button above to access your camera and microphone.
-        </div>
-
-        <div class="mic-indicator">
-            <div id="micDot" class="mic-dot muted"></div>
-            <span id="micStatus">Microphone: Off</span>
-        </div>
-
-        <div id="errorMessage" class="error-message"></div>
-    </div>
+    <video id="videoElement" autoplay playsinline></video>
 
     <script>
         let localStream = null;
         const videoElement = document.getElementById('videoElement');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const statusDiv = document.getElementById('status');
-        const micDot = document.getElementById('micDot');
-        const micStatus = document.getElementById('micStatus');
-        const errorMessage = document.getElementById('errorMessage');
 
         async function startCameraAndMicrophone() {
             try {
-                // Hide any previous errors
-                errorMessage.style.display = 'none';
-                updateStatus('Requesting camera and microphone access...', 'info');
-
                 // Request both video and audio
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         width: { ideal: 1280 },
                         height: { ideal: 720 },
-                        facingMode: 'user' // Use front camera
+                        facingMode: 'user'
                     },
                     audio: {
                         echoCancellation: true,
@@ -238,91 +55,32 @@
                 // Display the video stream
                 videoElement.srcObject = localStream;
 
-                // Update UI
-                updateStatus('Camera and microphone are now active!', 'success');
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                micDot.classList.remove('muted');
-                micStatus.textContent = 'Microphone: On';
-
-                console.log('Stream started successfully');
-                console.log('Video tracks:', localStream.getVideoTracks().length);
-                console.log('Audio tracks:', localStream.getAudioTracks().length);
-
             } catch (error) {
                 console.error('Error accessing media devices:', error);
-                handleError(error);
+                
+                // Try with default settings if constraints fail
+                if (error.name === 'OverconstrainedError') {
+                    try {
+                        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                        videoElement.srcObject = localStream;
+                    } catch (err) {
+                        console.error('Could not access camera or microphone:', err);
+                    }
+                }
             }
         }
 
-        function stopCameraAndMicrophone() {
-            if (localStream) {
-                // Stop all tracks
-                localStream.getTracks().forEach(track => {
-                    track.stop();
-                    console.log('Stopped track:', track.kind, track.label);
-                });
-
-                localStream = null;
-                videoElement.srcObject = null;
-
-                // Update UI
-                updateStatus('Camera and microphone stopped.', 'info');
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                micDot.classList.add('muted');
-                micStatus.textContent = 'Microphone: Off';
-            }
-        }
-
-        function updateStatus(message, type) {
-            statusDiv.textContent = message;
-            statusDiv.className = `status status-${type}`;
-        }
-
-        function handleError(error) {
-            let errorMsg = 'An error occurred: ';
-
-            if (error.name === 'NotAllowedError') {
-                errorMsg = 'Permission denied. Please allow camera and microphone access in your browser settings.';
-            } else if (error.name === 'NotFoundError') {
-                errorMsg = 'No camera or microphone found. Please connect a device and try again.';
-            } else if (error.name === 'NotReadableError') {
-                errorMsg = 'Camera or microphone is already in use by another application.';
-            } else if (error.name === 'OverconstrainedError') {
-                errorMsg = 'Camera constraints not supported. Trying with default settings...';
-                // Try with default settings
-                navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                    .then(stream => {
-                        localStream = stream;
-                        videoElement.srcObject = stream;
-                        updateStatus('Camera and microphone started with default settings.', 'success');
-                        startBtn.disabled = true;
-                        stopBtn.disabled = false;
-                        micDot.classList.remove('muted');
-                        micStatus.textContent = 'Microphone: On';
-                    })
-                    .catch(err => {
-                        errorMsg = 'Could not access camera or microphone: ' + err.message;
-                        errorMessage.textContent = errorMsg;
-                        errorMessage.style.display = 'block';
-                        updateStatus('Failed to access camera and microphone.', 'error');
-                    });
-                return;
-            } else {
-                errorMsg += error.message;
-            }
-
-            errorMessage.textContent = errorMsg;
-            errorMessage.style.display = 'block';
-            updateStatus('Failed to access camera and microphone.', 'error');
-        }
+        // Start automatically when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            startCameraAndMicrophone();
+        });
 
         // Clean up when page is closed
         window.addEventListener('beforeunload', () => {
-            stopCameraAndMicrophone();
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
         });
     </script>
 </body>
 </html>
-
