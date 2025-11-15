@@ -638,6 +638,22 @@
             min-width: 50px;
             text-align: center;
             position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bitmoji-avatar {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            border-radius: 50%;
+            background: transparent;
+            display: block;
+        }
+
+        .bitmoji-avatar:not([src]) {
+            display: none;
         }
 
         .personality-button:hover {
@@ -938,7 +954,6 @@
     <video id="videoElement" autoplay playsinline></video>
     
     <div id="controls">
-        <button class="close-button" onclick="closeControls()" title="Close">×</button>
         <div class="ai-toggle-container">
             <span class="ai-label">AI</span>
             <label class="toggle-switch">
@@ -1435,10 +1450,10 @@
                     if (segments.length > 0) {
                         // Add each segment as a separate entry with its own timeout
                         segments.forEach(segment => {
-                            addTranscriptEntry(segment.speaker || 'Unknown', segment.text || '');
+                            addTranscriptEntry(segment.text || '');
                         });
                     } else if (fullText) {
-                        addTranscriptEntry('Unknown', fullText);
+                        addTranscriptEntry(fullText);
                     }
                 } else if (msgType === 'transcription_error') {
                     const error = data.data?.error || 'Unknown error';
@@ -1686,7 +1701,7 @@
         }
         
         // Add transcript entry to UI
-        function addTranscriptEntry(speaker, text) {
+        function addTranscriptEntry(text) {
             // Clear partial transcript when adding final entry
             clearPartialTranscript();
             
@@ -2357,12 +2372,11 @@
                 content.innerHTML = `
                     <div class="history-list">
                         ${meetings.map(meeting => {
-                            const title = meeting.title || `Meeting ${new Date(meeting.start_time).toLocaleString()}`;
-                            const date = new Date(meeting.start_time).toLocaleString();
+                            // Use the meeting title from API, or fallback to a default
+                            const title = meeting.title || `Meeting ${new Date(meeting.start_time).toLocaleDateString()}`;
                             return `
                                 <div class="history-item" onclick="showMeetingDetail('${meeting.meeting_id}')">
                                     <div class="history-item-title">${title}</div>
-                                    <div class="history-item-date">${date}</div>
                                 </div>
                             `;
                         }).join('')}
@@ -2418,11 +2432,12 @@
                     const isSelected = voice.voice_id === selectedVoiceId;
                     // Escape HTML in title attribute
                     const title = `${voice.name} - ${(voice.description || '').replace(/"/g, '&quot;')}`;
+                    const bitmojiUrl = voice.bitmoji_url || voice.emoji; // Fallback to emoji if bitmoji_url not available
                     return `
                         <button class="personality-button ${isSelected ? 'selected' : ''}" 
                                 onclick="selectPersonality('${voice.voice_id}', this)"
                                 title="${title}">
-                            ${voice.emoji}
+                            ${bitmojiUrl.startsWith('http') ? `<img src="${bitmojiUrl}" alt="${voice.name}" class="bitmoji-avatar" />` : bitmojiUrl}
                         </button>
                     `;
                 }).join('');
@@ -2500,7 +2515,6 @@
                         } else {
                             transcriptContent.innerHTML = transcript.map(segment => `
                                 <div class="transcript-segment">
-                                    <div class="transcript-speaker-name">${segment.speaker || 'Unknown'}</div>
                                     <div class="transcript-segment-text">${segment.text || ''}</div>
                                 </div>
                             `).join('');

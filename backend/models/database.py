@@ -57,6 +57,7 @@ class Meeting(Base):
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     status = Column(String, default="active")  # active, completed, cancelled
+    title = Column(String, nullable=True)  # LLM-generated meeting title
     summary = Column(Text, nullable=True)
     transcript = Column(JSON, default=list)  # List of transcript segments
     tasks = Column(JSON, default=list)  # List of tasks

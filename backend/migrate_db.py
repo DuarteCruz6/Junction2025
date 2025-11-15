@@ -28,17 +28,17 @@ def migrate_database():
         with engine.connect() as conn:
             inspector = inspect(engine)
             
-            # 1. Remove 'title' column from 'meetings' table if it exists
+            # 1. Add 'title' column to 'meetings' table if it doesn't exist
             print("\n1. Checking 'meetings' table...")
             if 'meetings' in inspector.get_table_names():
                 columns = [col['name'] for col in inspector.get_columns('meetings')]
-                if 'title' in columns:
-                    print("   🗑️  Removing 'title' column from 'meetings' table...")
-                    conn.execute(text("ALTER TABLE meetings DROP COLUMN IF EXISTS title"))
+                if 'title' not in columns:
+                    print("   ➕ Adding 'title' column to 'meetings' table...")
+                    conn.execute(text("ALTER TABLE meetings ADD COLUMN title VARCHAR"))
                     conn.commit()
-                    print("   ✅ 'title' column removed successfully")
+                    print("   ✅ 'title' column added successfully")
                 else:
-                    print("   ✅ 'title' column doesn't exist (correct)")
+                    print("   ✅ 'title' column already exists")
             else:
                 print("   ⚠️  'meetings' table doesn't exist (will be created on next startup)")
             

@@ -36,7 +36,7 @@ def get_meeting_from_db_or_memory(meeting_id: str) -> Optional[Dict]:
                 
                 result = {
                     "meeting_id": meeting.id,
-                    "title": title,
+                    "title": meeting.title or title,  # Use stored title, fallback to generated
                     "start_time": meeting.start_time.isoformat() if meeting.start_time else None,
                     "end_time": meeting.end_time.isoformat() if meeting.end_time else None,
                     "status": meeting.status,
@@ -108,6 +108,7 @@ def save_meeting_to_db(meeting_data: dict):
                 meeting.start_time = datetime.fromisoformat(meeting_data["start_time"]) if meeting_data.get("start_time") else meeting.start_time
                 meeting.end_time = datetime.fromisoformat(meeting_data["end_time"]) if meeting_data.get("end_time") else meeting.end_time
                 meeting.status = meeting_data.get("status", meeting.status)
+                meeting.title = meeting_data.get("title") if meeting_data.get("title") else meeting.title  # Only update if new title provided
                 meeting.transcript = meeting_data.get("transcript", meeting.transcript)
                 meeting.summary = meeting_data.get("summary", meeting.summary)
                 meeting.tasks = meeting_data.get("tasks", meeting.tasks)
@@ -119,6 +120,7 @@ def save_meeting_to_db(meeting_data: dict):
                     start_time=datetime.fromisoformat(meeting_data["start_time"]) if meeting_data.get("start_time") else datetime.utcnow(),
                     end_time=datetime.fromisoformat(meeting_data["end_time"]) if meeting_data.get("end_time") else None,
                     status=meeting_data.get("status", "active"),
+                    title=meeting_data.get("title"),
                     transcript=meeting_data.get("transcript", []),
                     summary=meeting_data.get("summary"),
                     tasks=meeting_data.get("tasks", []),
@@ -163,9 +165,9 @@ def get_all_meetings_from_db(include_full_data: bool = False) -> List[Dict]:
             
             result = []
             for meeting in meetings:
-                # Generate title from start_time for display
-                title = None
-                if meeting.start_time:
+                # Use stored title, or generate from start_time for display
+                title = meeting.title
+                if not title and meeting.start_time:
                     title = f"Meeting {meeting.start_time.strftime('%Y-%m-%d %H:%M')}"
                 
                 meeting_dict = {
