@@ -20,5 +20,7 @@ services:
     container_name: junction2025-frontend
     ports:
       - "3000:80"
+    volumes:
+      - ./frontend/index.html:/usr/share/nginx/html/index.html
     restart: unless-stopped
 
