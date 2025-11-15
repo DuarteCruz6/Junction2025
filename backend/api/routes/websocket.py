@@ -2,15 +2,17 @@
 WebSocket endpoints for real-time updates
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 import json
 import base64
 import sys
 from datetime import datetime
+from typing import Optional
 
 from services.websocket_manager import websocket_manager
 from services.stt_service import stt_service
 from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db
+from models.database import UserSettings, SessionLocal
 
 router = APIRouter()
 
@@ -51,7 +53,11 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
 
 
 @router.websocket("/ws/audio/{meeting_id}")
-async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
+async def audio_streaming_endpoint(
+    websocket: WebSocket, 
+    meeting_id: str,
+    user_id: Optional[str] = Query(None, description="User ID for language preferences")
+):
     """WebSocket endpoint for streaming audio chunks and receiving transcriptions"""
     await websocket.accept()
     
@@ -61,6 +67,20 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
         print(f"[WebSocket] ❌ Meeting {meeting_id} not found, closing connection")
         await websocket.close(code=1008, reason="Meeting not found")
         return
+    
+    # Get user's language preference if user_id is provided
+    language_preference = None
+    if user_id and SessionLocal:
+        try:
+            db = SessionLocal()
+            user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+            if user_settings and user_settings.preferred_language:
+                language_preference = user_settings.preferred_language
+                print(f"[WebSocket] 🌐 Using user's preferred language: {language_preference}")
+            db.close()
+        except Exception as e:
+            print(f"[WebSocket] ⚠️  Could not retrieve user settings: {e}")
+            # Continue with auto-detect if settings retrieval fails
     
     # Try to connect to realtime API if enabled
     use_realtime = stt_service.use_realtime

@@ -32,10 +32,13 @@
         #controls {
             position: fixed !important;
             top: 20px !important;
-            left: 20px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
             z-index: 9999 !important;
             display: flex !important;
             flex-direction: column;
+            align-items: center;
+            justify-content: center;
             gap: 10px;
             background: rgba(0, 0, 0, 0.9) !important;
             padding: 16px;
@@ -44,53 +47,79 @@
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             visibility: visible !important;
             opacity: 1 !important;
+            width: fit-content !important;
         }
 
-        button {
-            padding: 14px 28px !important;
-            background: #4CAF50 !important;
-            color: white !important;
-            border: 2px solid #45a049 !important;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px !important;
+        .ai-toggle-container {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .ai-label {
+            color: white;
+            font-size: 18px !important;
             font-weight: 600;
-            transition: all 0.3s;
-            min-width: 180px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            visibility: visible !important;
-            opacity: 1 !important;
-            display: block !important;
+            letter-spacing: 1px;
         }
 
-        button:hover {
-            background: #45a049;
-            border-color: #3d8b40;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        .toggle-switch {
+            position: relative;
+            width: 60px;
+            height: 32px;
+            display: inline-block;
         }
 
-        button:disabled {
-            background: #666;
-            border-color: #555;
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #666;
+            transition: 0.3s;
+            border-radius: 32px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 24px;
+            width: 24px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #4CAF50;
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(28px);
+        }
+
+        .toggle-switch input:disabled + .toggle-slider {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
         }
 
-        button.active {
-            background: #f44336;
-            border-color: #d32f2f;
+        .toggle-switch input:checked + .toggle-slider:hover {
+            background-color: #45a049;
         }
 
-        #stopBtn:not(:disabled) {
-            background: #f44336;
-            border-color: #d32f2f;
-        }
-
-        #stopBtn:not(:disabled):hover {
-            background: #d32f2f;
-            border-color: #b71c1c;
+        .toggle-switch input:not(:checked) + .toggle-slider:hover {
+            background-color: #777;
         }
 
         #status {
@@ -102,9 +131,35 @@
             min-width: 200px;
         }
 
+        #notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 10000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+            max-width: 300px;
+        }
+
+        #notification.show {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
         #transcript {
             position: fixed;
-            bottom: 20px;
+            bottom: 80px;
             left: 20px;
             right: 20px;
             max-height: 300px;
@@ -127,6 +182,17 @@
             padding: 8px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 4px;
+        }
+
+        .transcript-word {
+            display: inline-block;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+            margin-right: 4px;
+        }
+
+        .transcript-word.fading {
+            opacity: 0;
         }
         
         .transcript-entry-partial {
@@ -168,12 +234,17 @@
     <video id="videoElement" autoplay playsinline></video>
     
     <div id="controls">
-        <button id="startBtn">Start Meeting</button>
-        <button id="stopBtn" disabled>Stop Meeting</button>
-        <div id="status">Ready</div>
+        <div class="ai-toggle-container">
+            <span class="ai-label">AI</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="aiToggle">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
     </div>
     
     <div id="transcript" class="hidden"></div>
+    <div id="notification"></div>
 
     <script>
         // Configuration - matching test_audio_streaming.py
@@ -181,15 +252,16 @@
         const WS_URL = BACKEND_URL.replace('http://', 'ws://').replace('https://', 'wss://');
         const SAMPLE_RATE = 16000;
         const CHANNELS = 1;
-        const CHUNK_SIZE = 2048; // Must be power of 2 (256-16384) for ScriptProcessorNode. 2048 = ~128ms at 16kHz
+        const CHUNK_SIZE = 2048; // Must be power of 2 (256-16384) for AudioWorklet. 2048 = ~128ms at 16kHz
         const FORMAT = 16; // 16-bit
 
-        // VAD Configuration - optimized for better transcription quality
-        // Longer chunks provide more context for better STT accuracy
-        const ENERGY_THRESHOLD = 0.005;
-        const MIN_SILENCE_DURATION = 0.5; // seconds (increased for better word boundaries)
-        const MIN_SPEECH_DURATION = 0.2; // seconds
-        const MAX_CHUNK_DURATION = 4.0; // seconds (matches backend MAX_BUFFER_DURATION)
+        // Streaming Configuration - optimized for live translation
+        // Small chunks for low latency, but batch a few together to reduce WebSocket overhead
+        const STREAMING_BATCH_SIZE = 3; // Send every 3 chunks (~384ms) for balance between latency and efficiency
+        const MIN_BATCH_DURATION = 0.2; // Minimum 200ms before sending (prevents too many tiny sends)
+        
+        // Caption display duration (6 seconds)
+        const CAPTION_DISPLAY_DURATION = 6000; // milliseconds
 
         // State
         let localStream = null;
@@ -199,20 +271,42 @@
         let meetingId = null;
         let isRecording = false;
         let currentPartialTranscript = null; // For displaying interim results
+        const wordTimeouts = new Map(); // Store timeouts for individual words
         
-        // Audio processing state
+        // Audio processing state - streaming mode
         let audioBuffer = [];
-        let vadState = {
-            isSpeech: false,
-            silenceDuration: 0.0,
-            speechDuration: 0.0,
-        };
+        let lastSendTime = 0;
 
         const videoElement = document.getElementById('videoElement');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const statusDiv = document.getElementById('status');
+        const aiToggle = document.getElementById('aiToggle');
         const transcriptDiv = document.getElementById('transcript');
+        const notificationDiv = document.getElementById('notification');
+        let notificationTimeout = null;
+
+        // Show temporary notification
+        function showNotification(message, duration = 3000) {
+            // Clear any existing timeout
+            if (notificationTimeout) {
+                clearTimeout(notificationTimeout);
+            }
+            
+            notificationDiv.textContent = message;
+            notificationDiv.classList.add('show');
+            
+            // Hide after duration
+            notificationTimeout = setTimeout(() => {
+                notificationDiv.classList.remove('show');
+            }, duration);
+        }
+
+        // Hide notification immediately
+        function hideNotification() {
+            if (notificationTimeout) {
+                clearTimeout(notificationTimeout);
+                notificationTimeout = null;
+            }
+            notificationDiv.classList.remove('show');
+        }
 
         // Calculate RMS energy of audio chunk (Float32Array, values -1 to 1)
         function calculateEnergy(audioData) {
@@ -257,71 +351,46 @@
             return result;
         }
 
-        // Process audio chunk with VAD
+        // Process audio chunk - continuous streaming mode for live translation
         async function processAudioChunk(audioData) {
-            // audioData is Float32Array from ScriptProcessorNode (already mono from channel 0)
+            // audioData is Float32Array from AudioWorklet (already mono from channel 0)
             let monoData = audioData;
 
             // Resample to 16kHz if needed
             if (audioContext.sampleRate !== SAMPLE_RATE) {
                 monoData = resampleAudio(monoData, audioContext.sampleRate, SAMPLE_RATE);
             }
-
-            // Calculate energy on float data (before conversion)
-            const energy = calculateEnergy(monoData);
-            const isSpeech = energy > ENERGY_THRESHOLD;
             
             // Convert to Int16 PCM for sending
             const pcmData = floatTo16BitPCM(monoData);
             
-            const chunkDuration = pcmData.length / SAMPLE_RATE;
-            
-            // VAD State Machine
-            if (isSpeech) {
-                vadState.speechDuration += chunkDuration;
-                vadState.silenceDuration = 0.0;
-                
-                if (!vadState.isSpeech) {
-                    if (vadState.speechDuration >= MIN_SPEECH_DURATION) {
-                        vadState.isSpeech = true;
-                        console.log('✅ Speech detected! Starting to buffer...');
-                    }
-                }
-            } else {
-                vadState.silenceDuration += chunkDuration;
-                vadState.speechDuration = 0.0;
-                
-                if (vadState.isSpeech) {
-                    if (vadState.silenceDuration >= MIN_SILENCE_DURATION) {
-                        // End of speech - send chunk
-                        console.log('📤 Sending audio chunk (silence detected)...');
-                        await sendAudioChunk(true);
-                        vadState.isSpeech = false;
-                        vadState.silenceDuration = 0.0;
-                        return;
-                    }
-                }
-            }
-            
-            // Add to buffer
+            // Add to buffer immediately (no VAD delay)
             audioBuffer.push(pcmData.buffer);
             
-            // Calculate buffer duration (sum of all chunk sizes)
-            const totalSamples = audioBuffer.reduce((sum, buf) => sum + (buf.byteLength / 2), 0); // 2 bytes per sample
+            // Calculate buffer duration
+            const totalSamples = audioBuffer.reduce((sum, buf) => sum + (buf.byteLength / 2), 0);
             const bufferDuration = totalSamples / SAMPLE_RATE;
+            const currentTime = Date.now();
+            const timeSinceLastSend = (currentTime - lastSendTime) / 1000; // Convert to seconds
             
-            // Send if max duration reached
-            if (vadState.isSpeech && bufferDuration >= MAX_CHUNK_DURATION) {
-                console.log('📤 Sending audio chunk (max duration reached)...');
+            // Send if:
+            // 1. We have enough chunks (STREAMING_BATCH_SIZE) OR
+            // 2. Minimum duration has passed (MIN_BATCH_DURATION) to avoid too many tiny sends
+            const shouldSend = (
+                audioBuffer.length >= STREAMING_BATCH_SIZE ||
+                (bufferDuration >= MIN_BATCH_DURATION && timeSinceLastSend >= MIN_BATCH_DURATION)
+            );
+            
+            if (shouldSend) {
                 await sendAudioChunk(false);
+                lastSendTime = currentTime;
             }
         }
 
-        // Send buffered audio chunks via WebSocket
+        // Send buffered audio chunks via WebSocket - streaming mode
         async function sendAudioChunk(isFinal = false) {
             if (!audioBuffer.length) {
-                console.log('⚠️ No audio in buffer to send');
-                return;
+                return; // No audio to send
             }
             
             if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -340,15 +409,17 @@
                 }
                 
                 const duration = combined.length / (SAMPLE_RATE * 2); // 2 bytes per sample
-                console.log(`📤 Sending ${audioBuffer.length} chunks (${duration.toFixed(2)}s) to backend...`);
                 
-                // Send binary data
+                // Send binary data immediately (no buffering delay)
                 websocket.send(combined);
                 
                 // Clear buffer
                 audioBuffer = [];
                 
-                console.log('✅ Audio sent, waiting for transcription...');
+                // Only log occasionally to avoid console spam
+                if (Math.random() < 0.1) { // Log ~10% of sends
+                    console.log(`📤 Streaming audio: ${duration.toFixed(2)}s`);
+                }
             } catch (error) {
                 console.error('❌ Error sending audio:', error);
             }
@@ -368,17 +439,64 @@
                     sampleRate: SAMPLE_RATE
                 });
 
+                // Create AudioWorklet processor inline
+                // AudioWorklet processes in 128-sample frames, so we buffer to match CHUNK_SIZE
+                const workletCode = `
+                    class AudioProcessor extends AudioWorkletProcessor {
+                        constructor() {
+                            super();
+                            this.buffer = new Float32Array(0);
+                            this.chunkSize = ${CHUNK_SIZE};
+                        }
+                        
+                        process(inputs, outputs, parameters) {
+                            const input = inputs[0];
+                            if (input.length > 0) {
+                                const inputData = input[0];
+                                
+                                // Append new data to buffer
+                                const newBuffer = new Float32Array(this.buffer.length + inputData.length);
+                                newBuffer.set(this.buffer);
+                                newBuffer.set(inputData, this.buffer.length);
+                                this.buffer = newBuffer;
+                                
+                                // Send chunks when buffer reaches chunk size
+                                while (this.buffer.length >= this.chunkSize) {
+                                    const chunk = this.buffer.slice(0, this.chunkSize);
+                                    this.port.postMessage({
+                                        audioData: chunk
+                                    });
+                                    this.buffer = this.buffer.slice(this.chunkSize);
+                                }
+                            }
+                            return true;
+                        }
+                    }
+                    registerProcessor('audio-processor', AudioProcessor);
+                `;
+
+                // Create blob URL for worklet
+                const blob = new Blob([workletCode], { type: 'application/javascript' });
+                const workletUrl = URL.createObjectURL(blob);
+
+                // Load and register the worklet
+                await audioContext.audioWorklet.addModule(workletUrl);
+                URL.revokeObjectURL(workletUrl);
+
                 // Create media stream source
                 const source = audioContext.createMediaStreamSource(localStream);
 
-                // Create script processor (for audio processing)
-                processor = audioContext.createScriptProcessor(CHUNK_SIZE, CHANNELS, CHANNELS);
-                
-                processor.onaudioprocess = (e) => {
+                // Create AudioWorkletNode
+                processor = new AudioWorkletNode(audioContext, 'audio-processor', {
+                    numberOfInputs: 1,
+                    numberOfOutputs: 1,
+                    channelCount: CHANNELS
+                });
+
+                // Handle messages from the worklet
+                processor.port.onmessage = (e) => {
                     if (!isRecording) return;
-                    
-                    // Get audio data
-                    const inputData = e.inputBuffer.getChannelData(0);
+                    const inputData = e.data.audioData;
                     processAudioChunk(inputData);
                 };
 
@@ -386,7 +504,7 @@
                 const gainNode = audioContext.createGain();
                 gainNode.gain.value = 0;
 
-                // Connect nodes (processor needs output connection to work)
+                // Connect nodes
                 source.connect(processor);
                 processor.connect(gainNode);
                 gainNode.connect(audioContext.destination);
@@ -409,18 +527,14 @@
                 audioContext = null;
             }
             audioBuffer = [];
-            vadState = {
-                isSpeech: false,
-                silenceDuration: 0.0,
-                speechDuration: 0.0,
-            };
+            lastSendTime = 0;
         }
 
         // Start a meeting
         async function startMeeting() {
             try {
                 console.log('[Frontend] 🚀 Starting meeting...');
-                statusDiv.textContent = 'Starting meeting...';
+                showNotification('Starting meeting...', 2000);
                 
                 // Start meeting via API
                 console.log(`[Frontend] 📞 Calling ${BACKEND_URL}/api/meetings/start`);
@@ -450,15 +564,17 @@
                 console.log('[Frontend] ✅ Audio capture started');
                 
                 isRecording = true;
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                statusDiv.textContent = `Meeting active: ${meetingId.substring(0, 8)}...`;
+                aiToggle.checked = true;
+                aiToggle.disabled = false;
+                showNotification('Meeting active', 3000);
                 transcriptDiv.classList.remove('hidden');
                 
             } catch (error) {
                 console.error('[Frontend] ❌ Error starting meeting:', error);
                 console.error('[Frontend] ❌ Error stack:', error.stack);
-                statusDiv.textContent = `Error: ${error.message}`;
+                showNotification(`Error: ${error.message}`, 5000);
+                aiToggle.checked = false;
+                aiToggle.disabled = false;
             }
         }
 
@@ -526,6 +642,7 @@
                     const fullText = data.data?.full_text || '';
                     
                     if (segments.length > 0) {
+                        // Add each segment as a separate entry with its own timeout
                         segments.forEach(segment => {
                             addTranscriptEntry(segment.speaker || 'Unknown', segment.text || '');
                         });
@@ -535,7 +652,7 @@
                 } else if (msgType === 'transcription_error') {
                     const error = data.data?.error || 'Unknown error';
                     console.error('❌ Transcription error:', error);
-                    statusDiv.textContent = `Error: ${error}`;
+                    showNotification(`Error: ${error}`, 5000);
                 } else if (msgType === 'audio_received') {
                     const duration = data.data?.buffer_duration || 0;
                     console.log(`✅ Backend received audio (${duration.toFixed(2)}s)`);
@@ -544,7 +661,7 @@
                 } else if (msgType === 'error') {
                     const error = data.data?.error || 'Unknown error';
                     console.error('❌ Backend error:', error);
-                    statusDiv.textContent = `Error: ${error}`;
+                    showNotification(`Error: ${error}`, 5000);
                 }
             } catch (error) {
                 console.error('❌ Error handling WebSocket message:', error);
@@ -586,7 +703,81 @@
             
             const entry = document.createElement('div');
             entry.className = 'transcript-entry';
-            entry.innerHTML = `<span class="transcript-speaker">🎤 ${speaker}:</span><span class="transcript-text">${text}</span>`;
+            
+            // Create speaker label
+            const speakerSpan = document.createElement('span');
+            speakerSpan.className = 'transcript-speaker';
+            speakerSpan.textContent = `🎤 ${speaker}: `;
+            entry.appendChild(speakerSpan);
+            
+            // Create text container
+            const textContainer = document.createElement('span');
+            textContainer.className = 'transcript-text';
+            
+            // Split text into words and create a span for each word
+            const words = text.trim().split(/\s+/);
+            const wordSpans = [];
+            
+            words.forEach((word, index) => {
+                const wordSpan = document.createElement('span');
+                wordSpan.className = 'transcript-word';
+                wordSpan.textContent = word;
+                wordSpan.dataset.createdAt = Date.now();
+                
+                // Add space after word (except last)
+                if (index < words.length - 1) {
+                    wordSpan.textContent += ' ';
+                }
+                
+                textContainer.appendChild(wordSpan);
+                wordSpans.push(wordSpan);
+                
+                // Set timeout for each word to fade out after 6 seconds
+                const wordCreatedAt = wordSpan.dataset.createdAt;
+                const timeoutId = setTimeout(() => {
+                    // Verify word still exists and hasn't been removed
+                    if (!wordSpan.parentNode) {
+                        wordTimeouts.delete(wordSpan);
+                        return;
+                    }
+                    
+                    // Verify this timeout is still valid for this word
+                    const storedTimeout = wordTimeouts.get(wordSpan);
+                    if (storedTimeout !== timeoutId) {
+                        return;
+                    }
+                    
+                    // Verify the word's creation time matches
+                    if (wordSpan.dataset.createdAt != wordCreatedAt) {
+                        wordTimeouts.delete(wordSpan);
+                        return;
+                    }
+                    
+                    // Force reflow to ensure transition works
+                    void wordSpan.offsetHeight;
+                    
+                    // Add fading class to trigger CSS transition
+                    wordSpan.classList.add('fading');
+                    
+                    // Remove word from DOM after fade animation completes
+                    setTimeout(() => {
+                        if (wordSpan && wordSpan.parentNode && wordSpan.dataset.createdAt == wordCreatedAt) {
+                            wordSpan.remove();
+                            
+                            // Check if text container is now empty, remove entry if so
+                            if (textContainer.children.length === 0 && entry.parentNode) {
+                                entry.remove();
+                            }
+                        }
+                        wordTimeouts.delete(wordSpan);
+                    }, 500); // Match CSS transition duration
+                }, CAPTION_DISPLAY_DURATION);
+                
+                // Store timeout reference for this word
+                wordTimeouts.set(wordSpan, timeoutId);
+            });
+            
+            entry.appendChild(textContainer);
             transcriptDiv.appendChild(entry);
             
             // Auto-scroll to bottom
@@ -597,7 +788,7 @@
         async function stopMeeting() {
             try {
                 isRecording = false;
-                statusDiv.textContent = 'Stopping meeting...';
+                showNotification('Stopping meeting...', 2000);
                 
                 // Send final chunk
                 if (audioBuffer.length > 0) {
@@ -625,14 +816,21 @@
                     });
                 }
                 
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                statusDiv.textContent = 'Meeting stopped';
+                aiToggle.checked = false;
+                aiToggle.disabled = false;
+                showNotification('Meeting stopped', 3000);
                 meetingId = null;
+                
+                // Clear all word timeouts
+                wordTimeouts.forEach((timeoutId) => {
+                    clearTimeout(timeoutId);
+                });
+                wordTimeouts.clear();
                 
             } catch (error) {
                 console.error('❌ Error stopping meeting:', error);
-                statusDiv.textContent = `Error: ${error.message}`;
+                showNotification(`Error: ${error.message}`, 5000);
+                aiToggle.disabled = false;
             }
         }
 
@@ -654,45 +852,49 @@
                 });
 
                 videoElement.srcObject = localStream;
-                statusDiv.textContent = 'Ready - Click "Start Meeting" to begin';
+                // Camera and microphone ready - no notification needed
 
             } catch (error) {
                 console.error('Error accessing media devices:', error);
-                statusDiv.textContent = `Error: ${error.message}`;
+                showNotification(`Error: ${error.message}`, 5000);
                 
                 // Try with default settings if constraints fail
                 if (error.name === 'OverconstrainedError') {
                     try {
                         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                         videoElement.srcObject = localStream;
-                        statusDiv.textContent = 'Ready - Click "Start Meeting" to begin';
+                        // Camera and microphone ready - no notification needed
                     } catch (err) {
                         console.error('Could not access camera or microphone:', err);
-                        statusDiv.textContent = `Error: ${err.message}`;
+                        showNotification(`Error: ${err.message}`, 5000);
                     }
                 }
             }
         }
 
-        // Event listeners
-        startBtn.addEventListener('click', startMeeting);
-        stopBtn.addEventListener('click', stopMeeting);
+        // Handle AI toggle
+        aiToggle.addEventListener('change', async (e) => {
+            const isChecked = e.target.checked;
+            aiToggle.disabled = true; // Disable during transition
+            
+            if (isChecked) {
+                // Turn AI on = Start meeting
+                await startMeeting();
+            } else {
+                // Turn AI off = Stop meeting
+                await stopMeeting();
+            }
+        });
 
         // Start camera/microphone when page loads
         window.addEventListener('DOMContentLoaded', () => {
             console.log('[Frontend] 🚀 Page loaded, initializing...');
             
-            // Verify buttons exist
-            if (!startBtn) {
-                console.error('[Frontend] ❌ Start button not found!');
+            // Verify AI toggle exists
+            if (!aiToggle) {
+                console.error('[Frontend] ❌ AI toggle not found!');
             } else {
-                console.log('[Frontend] ✅ Start button found');
-            }
-            
-            if (!stopBtn) {
-                console.error('[Frontend] ❌ Stop button not found!');
-            } else {
-                console.log('[Frontend] ✅ Stop button found');
+                console.log('[Frontend] ✅ AI toggle found');
             }
             
             // Verify controls div exists

@@ -35,8 +35,6 @@ backend/wheels/
 backend/*.egg-info/
 backend/.installed.cfg
 backend/*.egg
-backend/.venv/
-backend/venv/
 backend/ENV/
 backend/env/
 backend/.pytest_cache/

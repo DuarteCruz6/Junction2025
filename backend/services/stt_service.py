@@ -579,11 +579,13 @@ class STTService:
                     include_timestamps=True,
                 )
                 
-                # Add language if specified
+                # Only set language if explicitly provided (for auto-detection, leave it unset)
+                # For live translation, we want the API to auto-detect the language
                 if language:
                     audio_options.language = language
-                elif self.default_language:
-                    audio_options.language = self.default_language
+                    print(f"[STT] 🌐 Using explicit language: {language}")
+                else:
+                    print(f"[STT] 🌐 Auto-detecting language (no language specified)")
                 
                 # Connect to realtime API using RealtimeAudioOptions
                 # This matches the documentation: await elevenlabs.speech_to_text.realtime.connect(RealtimeAudioOptions(...))
