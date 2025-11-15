@@ -1028,7 +1028,7 @@
 
                 // Create AudioContext
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: SAMPLE_RATE
+                    //sampleRate: SAMPLE_RATE
                 });
 
                 // Create AudioWorklet processor inline
@@ -1211,52 +1211,97 @@
         // Handle WebSocket messages
         function handleWebSocketMessage(event) {
             try {
+                console.log('[DEBUG] [Frontend] 📨 WebSocket message received');
+                
                 // Handle binary messages (shouldn't happen from server, but just in case)
                 if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-                    console.log('📦 Received binary message');
+                    console.log('[DEBUG] [Frontend] 📦 Received binary message, skipping');
                     return;
                 }
                 
-                const data = JSON.parse(event.data);
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                    console.log('[DEBUG] [Frontend] ✅ Parsed JSON:', data);
+                } catch (parseError) {
+                    console.error('[DEBUG] [Frontend] ❌ Failed to parse JSON:', parseError, 'Raw data:', event.data);
+                    return;
+                }
+                
                 const msgType = data.type;
+                console.log('[DEBUG] [Frontend] 📋 Message type:', msgType);
                 
                 if (msgType === 'partial_transcript') {
                     // Handle partial transcript (interim results from realtime API)
                     const text = data.data?.text || '';
+                    console.log('[DEBUG] [Frontend] 📝 Partial transcript:', text);
                     if (text) {
                         updatePartialTranscript(text);
                     }
                 } else if (msgType === 'transcription_result') {
+                    console.log('[DEBUG] [Frontend] ✅ transcription_result received');
                     // Clear partial transcript when we get final result
                     clearPartialTranscript();
                     
                     const segments = data.data?.segments || [];
                     const fullText = data.data?.full_text || '';
                     
+                    console.log('[DEBUG] [Frontend] 📊 transcription_result data:', {
+                        segmentsCount: segments.length,
+                        fullText: fullText,
+                        segments: segments.map(s => ({
+                            speaker: s.speaker,
+                            text: s.text?.substring(0, 50),
+                            translated_text: s.translated_text?.substring(0, 50)
+                        }))
+                    });
+                    
                     if (segments.length > 0) {
+                        console.log('[DEBUG] [Frontend] 📝 Processing segments:', segments.length);
                         // Add each segment as a separate entry with its own timeout
-                        segments.forEach(segment => {
-                            addTranscriptEntry(segment.speaker || 'Unknown', segment.text || '');
+                        segments.forEach((segment, idx) => {
+                            // Use translated_text if available, otherwise use original text
+                            const displayText = segment.translated_text || segment.text || '';
+                            console.log(`[DEBUG] [Frontend] [${idx+1}/${segments.length}] Adding caption: speaker='${segment.speaker || 'Unknown'}', text='${displayText.substring(0, 50)}...'`);
+                            addTranscriptEntry(segment.speaker || 'Unknown', displayText);
                         });
                     } else if (fullText) {
+                        console.log('[DEBUG] [Frontend] 📝 Using fullText:', fullText);
                         addTranscriptEntry('Unknown', fullText);
+                    } else {
+                        console.warn('[DEBUG] [Frontend] ⚠️ transcription_result has no segments or fullText!');
+                    }
+                } else if (msgType === 'transcript_update') {
+                    console.log('[DEBUG] [Frontend] 🔄 transcript_update received:', data.data);
+                    // Handle transcript update (already translated before sending)
+                    const entry = data.data || {};
+                    if (entry.text) {
+                        // Use translated_text if available, otherwise use original text
+                        const displayText = entry.translated_text || entry.text || '';
+                        console.log('[DEBUG] [Frontend] 📝 Adding caption from transcript_update:', displayText.substring(0, 50));
+                        addTranscriptEntry(entry.speaker || 'Unknown', displayText);
+                    } else {
+                        console.warn('[DEBUG] [Frontend] ⚠️ transcript_update has no text!');
                     }
                 } else if (msgType === 'transcription_error') {
                     const error = data.data?.error || 'Unknown error';
-                    console.error('❌ Transcription error:', error);
+                    console.error('[DEBUG] [Frontend] ❌ Transcription error:', error);
                     showNotification(`Error: ${error}`, 5000);
                 } else if (msgType === 'audio_received') {
                     const duration = data.data?.buffer_duration || 0;
-                    console.log(`✅ Backend received audio (${duration.toFixed(2)}s)`);
+                    console.log(`[DEBUG] [Frontend] ✅ Backend received audio (${duration.toFixed(2)}s)`);
                 } else if (msgType === 'connected') {
-                    console.log('✅ Connected to audio stream');
+                    console.log('[DEBUG] [Frontend] ✅ Connected to audio stream');
                 } else if (msgType === 'error') {
                     const error = data.data?.error || 'Unknown error';
-                    console.error('❌ Backend error:', error);
+                    console.error('[DEBUG] [Frontend] ❌ Backend error:', error);
                     showNotification(`Error: ${error}`, 5000);
+                } else {
+                    console.warn('[DEBUG] [Frontend] ⚠️ Unknown message type:', msgType, data);
                 }
             } catch (error) {
-                console.error('❌ Error handling WebSocket message:', error);
+                console.error('[DEBUG] [Frontend] ❌ Error handling WebSocket message:', error);
+                console.error('[DEBUG] [Frontend] Error stack:', error.stack);
             }
         }
 
@@ -1290,11 +1335,20 @@
         
         // Add transcript entry to UI
         function addTranscriptEntry(speaker, text) {
+            console.log(`[DEBUG] [Frontend] 🎬 addTranscriptEntry called: speaker='${speaker}', text='${text.substring(0, 50)}...'`);
+            
             // Clear partial transcript when adding final entry
             clearPartialTranscript();
             
+            if (!text || !text.trim()) {
+                console.warn('[DEBUG] [Frontend] ⚠️ addTranscriptEntry called with empty text, skipping');
+                return;
+            }
+            
             const entry = document.createElement('div');
             entry.className = 'transcript-entry';
+            
+            console.log('[DEBUG] [Frontend] 📦 Created entry element:', entry);
             
             // Create speaker label
             const speakerSpan = document.createElement('span');
@@ -1370,10 +1424,21 @@
             });
             
             entry.appendChild(textContainer);
+            
+            console.log('[DEBUG] [Frontend] 📍 About to append entry to transcriptDiv. transcriptDiv exists:', !!transcriptDiv, 'is hidden:', transcriptDiv.classList.contains('hidden'));
+            
             transcriptDiv.appendChild(entry);
+            console.log('[DEBUG] [Frontend] ✅ Entry appended. Total entries:', transcriptDiv.children.length);
+            
+            // Make sure transcript is visible
+            if (transcriptDiv.classList.contains('hidden')) {
+                console.log('[DEBUG] [Frontend] 👁️ Making transcript visible');
+                transcriptDiv.classList.remove('hidden');
+            }
             
             // Auto-scroll to bottom
             transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+            console.log('[DEBUG] [Frontend] ✅ addTranscriptEntry completed');
         }
 
         // Stop meeting
@@ -1978,12 +2043,16 @@
                         if (transcript.length === 0) {
                             transcriptContent.innerHTML = '<div class="empty-state">No transcript available</div>';
                         } else {
-                            transcriptContent.innerHTML = transcript.map(segment => `
+                            transcriptContent.innerHTML = transcript.map(segment => {
+                                // Use translated_text if available, otherwise use original text
+                                const displayText = segment.translated_text || segment.text || '';
+                                return `
                                 <div class="transcript-segment">
                                     <div class="transcript-speaker-name">${segment.speaker || 'Unknown'}</div>
-                                    <div class="transcript-segment-text">${segment.text || ''}</div>
+                                    <div class="transcript-segment-text">${displayText}</div>
                                 </div>
-                            `).join('');
+                            `;
+                            }).join('');
                         }
                     } catch (error) {
                         console.error('Error loading transcript:', error);

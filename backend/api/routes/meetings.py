@@ -11,6 +11,7 @@ import asyncio
 from services.llm_service import llm_service
 from services.stt_service import stt_service
 from services.websocket_manager import websocket_manager
+from services.translation_service import translation_service
 from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db, get_meeting_speakers, get_speakers_for_meetings_batch, merge_diarized_transcripts, DB_AVAILABLE
 from utils.storage import meetings_db, audio_streams, background_tasks
 from services.background_tasks import process_summary_update, process_task_extraction, process_batch_diarization
@@ -134,34 +135,47 @@ async def stop_meeting(meeting_id: str):
             if not segments:
                 return
             
-            # Add each segment to the transcript
+            # Get target language (default to English)
+            target_language = translation_service.get_target_language_for_user(None)
+            
+            # Add each segment to the transcript and broadcast
             for segment in segments:
+                text = segment.get("text", "")
+                
+                # Translate text if needed
+                translated_text = text  # Default to original text
+                try:
+                    translation_result = await translation_service.translate_text(
+                        text=text,
+                        target_language=target_language
+                    )
+                    if translation_result.get("success"):
+                        translated_text = translation_result.get("translated_text", text)
+                        if translation_result.get("translation_needed"):
+                            print(f"🌐 Translation: {text[:50]}... → {translated_text[:50]}...", flush=True)
+                except Exception as e:
+                    print(f"[Meetings] ⚠️  Translation error (using original text): {e}", flush=True)
+                    # Continue with original text if translation fails
+                
                 transcript_entry = {
-                    "text": segment["text"],
+                    "text": text,  # Original text
+                    "translated_text": translated_text,  # Translated text (same as original if not translated)
                     "speaker": segment.get("speaker", "Unknown"),
                     "start": segment.get("start", 0.0),
                     "end": segment.get("end", 0.0),
                     "timestamp": datetime.now().isoformat(),
                 }
                 meeting["transcript"].append(transcript_entry)
-            
-            # Save to database
-            save_meeting_to_db(meeting)
-            print(f"[Meetings] ✅ Saved {len(segments)} transcript segments to database")
-            
-            # Broadcast transcript updates
-            for segment in segments:
-                transcript_entry = {
-                    "text": segment["text"],
-                    "speaker": segment.get("speaker", "Unknown"),
-                    "start": segment.get("start", 0.0),
-                    "end": segment.get("end", 0.0),
-                    "timestamp": datetime.now().isoformat(),
-                }
+                
+                # Broadcast transcript update
                 await websocket_manager.send_transcript_update(
                     meeting_id=meeting_id,
                     transcript_entry=transcript_entry
                 )
+            
+            # Save to database
+            save_meeting_to_db(meeting)
+            print(f"[Meetings] ✅ Saved {len(segments)} transcript segments to database")
         except Exception as e:
             print(f"[Meetings] ❌ Error in save_transcript_callback: {e}")
             import traceback

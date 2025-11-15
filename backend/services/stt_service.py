@@ -559,10 +559,22 @@ class STTService:
             True if connection successful, False otherwise
         """
         async with self.realtime_lock:
-            if meeting_id in self.realtime_connections:
-                print(f"[STT] ⚠️  Realtime connection already exists for meeting {meeting_id}")
-                return True
-            
+            # Check if connection already exists - if so, disconnect and reconnect to ensure handlers are registered
+            connection_exists = meeting_id in self.realtime_connections
+        
+        # Disconnect outside the lock to avoid deadlock
+        if connection_exists:
+            print(f"[STT] ⚠️  Realtime connection already exists for meeting {meeting_id}, reconnecting to ensure handlers are registered...", flush=True)
+            try:
+                # Disconnect existing connection to ensure clean state
+                await self.disconnect_realtime(meeting_id)
+                print(f"[STT] ✅ Disconnected existing connection", flush=True)
+            except Exception as e:
+                print(f"[STT] ⚠️  Error disconnecting existing connection: {e}", flush=True)
+                # Clear from dict anyway (outside lock is safe since disconnect_realtime handles it)
+        
+        # Reacquire lock for connection setup
+        async with self.realtime_lock:
             try:
                 print(f"[STT] 🔌 Connecting to ElevenLabs realtime API for meeting {meeting_id}...")
                 
@@ -595,7 +607,7 @@ class STTService:
                 # Note: connection.on() takes (event, callback) - not a decorator
                 # The library expects synchronous callbacks, so we wrap async handlers
                 def on_session_started(data):
-                    print(f"[STT] ✅ Realtime session started for meeting {meeting_id}")
+                    print(f"[STT] ✅ Realtime session started for meeting {meeting_id}", flush=True)
                 
                 async def _on_partial_async(data):
                     try:
@@ -610,7 +622,10 @@ class STTService:
                             text = str(data)
                             speaker = None
                         
+                        print(f"[DEBUG] [STT] 🔵 Extracted text from partial: '{text}'", flush=True)
+                        
                         if text and on_partial_transcript:
+                            print(f"[DEBUG] [STT] 🔵 Cleaning and sending partial transcript...", flush=True)
                             # Clean text before sending
                             if self.enable_text_cleaning:
                                 text = self._clean_text(text)
@@ -624,9 +639,17 @@ class STTService:
                                 # Include speaker if available
                                 if speaker is not None:
                                     transcript_data["speaker"] = speaker
+                                print(f"[DEBUG] [STT] 🔵 Calling on_partial_transcript callback...", flush=True)
                                 await on_partial_transcript(transcript_data)
+                                print(f"[DEBUG] [STT] 🔵 on_partial_transcript callback completed", flush=True)
+                            else:
+                                print(f"[DEBUG] [STT] 🔵 Partial text empty after cleaning, skipping", flush=True)
+                        else:
+                            print(f"[DEBUG] [STT] 🔵 No text or callback - text: '{text}', has callback: {bool(on_partial_transcript)}", flush=True)
                     except Exception as e:
-                        print(f"[STT] ⚠️  Error handling partial transcript: {e}")
+                        print(f"[DEBUG] [STT] ❌ Error handling partial transcript: {e}", flush=True)
+                        import traceback
+                        traceback.print_exc()
                 
                 def on_partial(data):
                     # Wrap async handler in a task to avoid RuntimeWarning
@@ -638,7 +661,7 @@ class STTService:
                         speaker = data.get("speaker", data.get("speaker_id", None))
                         text = data.get("text", "")
                         if speaker:
-                            print(f"[STT] [Diarization] 🎤 Committed transcript with speaker: {speaker}")
+                            print(f"[STT] 🎤 Committed transcript with speaker: {speaker}", flush=True)
                     else:
                         text = str(data)
                         speaker = None
@@ -753,6 +776,7 @@ class STTService:
                     asyncio.create_task(cleanup())
                 
                 # Register event handlers (connection.on() takes event and callback)
+                # Register event handlers
                 connection.on(RealtimeEvents.SESSION_STARTED, on_session_started)
                 connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, on_partial)
                 connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT, on_committed)
@@ -794,52 +818,72 @@ class STTService:
         """
         # Skip empty chunks
         if not audio_chunk or len(audio_chunk) == 0:
-            return True  # Not an error, just nothing to send
+            return True
+        
+        # Validate audio format (must be 16-bit PCM, 16kHz, mono)
+        expected_chunk_size = self.SAMPLE_RATE * self.SAMPLE_WIDTH * self.CHANNELS // 8  # bytes per second
+        if len(audio_chunk) % (self.SAMPLE_WIDTH * self.CHANNELS) != 0:
+            # Invalid chunk size, skip it
+            return True
+        
+        # Analyze and filter silence/noise
+        try:
+            import struct
+            # Convert bytes to int16 samples
+            num_samples = len(audio_chunk) // 2
+            if num_samples == 0:
+                return True
+            
+            samples = struct.unpack(f'<{num_samples}h', audio_chunk)
+            max_amplitude = max(abs(s) for s in samples) if samples else 0
+            
+            # Filter out silence/noise (threshold: 500 amplitude for 16-bit audio)
+            # Typical speech is 5000-15000, silence is near 0
+            SILENCE_THRESHOLD = 500
+            if max_amplitude < SILENCE_THRESHOLD:
+                # Too quiet, skip this chunk (likely silence or noise)
+                return True
+        except Exception:
+            # If analysis fails, proceed with original audio
+            pass
+        
+        # Normalize audio gain for better quality
+        normalized_audio = self._normalize_audio_gain(audio_chunk, self.SAMPLE_WIDTH)
         
         async with self.realtime_lock:
             if meeting_id not in self.realtime_connections:
-                print(f"[STT] ⚠️  No realtime connection for meeting {meeting_id}")
                 return False
             
             try:
                 connection = self.realtime_connections[meeting_id]["connection"]
                 
-                # Validate connection is still active
                 if not connection:
-                    print(f"[STT] ⚠️  Realtime connection is None for meeting {meeting_id}")
                     del self.realtime_connections[meeting_id]
                     return False
                 
-                # Convert PCM to base64
-                audio_base64 = base64.b64encode(audio_chunk).decode("utf-8")
+                # Convert normalized PCM to base64
+                audio_base64 = base64.b64encode(normalized_audio).decode("utf-8")
                 
-                # Send audio chunk with error handling
+                # Send audio chunk to ElevenLabs
                 try:
                     await connection.send({
                         "audio_base_64": audio_base64,
                         "sample_rate": self.SAMPLE_RATE,
                     })
                     return True
-                except AttributeError as e:
-                    # Connection object doesn't have send method or is closed
-                    print(f"[STT] ⚠️  Connection object invalid: {e}")
+                except (AttributeError, RuntimeError, ConnectionError) as e:
+                    # Connection invalid or closed
                     if meeting_id in self.realtime_connections:
                         del self.realtime_connections[meeting_id]
                     return False
-                except Exception as send_error:
-                    # Other send errors
-                    print(f"[STT] ⚠️  Error sending audio chunk: {send_error}")
-                    # Don't delete connection on send error - might be temporary
+                except Exception:
+                    # Other send errors - don't delete connection, might be temporary
                     return False
                 
             except KeyError:
                 # Connection was removed by another thread
-                print(f"[STT] ⚠️  Connection removed for meeting {meeting_id}")
                 return False
-            except Exception as e:
-                print(f"[STT] ❌ Unexpected error sending audio to realtime API for meeting {meeting_id}: {e}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
                 # Clean up connection on unexpected error
                 if meeting_id in self.realtime_connections:
                     del self.realtime_connections[meeting_id]

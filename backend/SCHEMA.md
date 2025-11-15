@@ -35,12 +35,17 @@ Each transcript segment in the `transcript` JSON array has this structure:
 ```json
 {
   "text": "Hello, how are you?",
+  "translated_text": "Hello, how are you?",
   "speaker": "John Doe",
   "start": 0.5,
   "end": 2.3,
   "timestamp": "2025-01-15T10:30:00Z"
 }
 ```
+
+**Note:** 
+- `text` - Original transcribed text in the detected source language
+- `translated_text` - Translated text in the target language (same as `text` if already in target language or translation failed)
 
 ### Tasks JSON Structure
 

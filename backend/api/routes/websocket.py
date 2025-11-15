@@ -6,11 +6,13 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 import json
 import base64
 import sys
+import asyncio
 from datetime import datetime
 from typing import Optional
 
 from services.websocket_manager import websocket_manager
 from services.stt_service import stt_service
+from services.translation_service import translation_service
 from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db
 from models.database import UserSettings, SessionLocal
 
@@ -101,7 +103,9 @@ async def audio_streaming_endpoint(
                         }
                     })
             except Exception as e:
-                print(f"[WebSocket] Error sending partial transcript: {e}")
+                print(f"[DEBUG] [WebSocket] ❌ Error sending partial transcript: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
         
         # Callback for committed transcripts (final results)
         async def on_committed_transcript(data: dict):
@@ -110,7 +114,7 @@ async def audio_streaming_endpoint(
                 # Handle errors
                 if data.get("type") == "error":
                     error_msg = data.get("error", "Unknown error")
-                    print(f"[WebSocket] ❌ Realtime API error: {error_msg}")
+                    print(f"[WebSocket] ❌ Realtime API error: {error_msg}", flush=True)
                     try:
                         await websocket.send_json({
                             "type": "transcription_error",
@@ -136,7 +140,6 @@ async def audio_streaming_endpoint(
                 if transcript:
                     last_entry = transcript[-1]
                     if last_entry.get("text") == text and last_entry.get("speaker") == "Unknown":
-                        # Duplicate detected, skip
                         return
                 
                 # Calculate timing from words if available
@@ -146,20 +149,38 @@ async def audio_streaming_endpoint(
                     start_time = words[0].get("start", 0.0) if isinstance(words[0], dict) else 0.0
                     end_time = words[-1].get("end", 0.0) if isinstance(words[-1], dict) else 0.0
                 
+                # Translate if needed BEFORE showing caption
+                target_language = translation_service.get_target_language_for_user(user_id)
+                display_text = text  # Default to original
+                
+                try:
+                    translation_result = await translation_service.translate_text(
+                        text=text,
+                        target_language=target_language
+                    )
+                    
+                    if translation_result.get("success") and translation_result.get("translation_needed"):
+                        display_text = translation_result.get("translated_text", text)
+                        print(f"🌐 Translation: {text[:50]}... → {display_text[:50]}...", flush=True)
+                except Exception as e:
+                    print(f"[WebSocket] ⚠️  Translation error (using original text): {e}", flush=True)
+                
+                # Create transcript entry with final translated text
                 transcript_entry = {
-                    "text": text,
+                    "text": text,  # Original text (always preserve)
+                    "translated_text": display_text,  # Text to display (translated or original)
                     "speaker": "Unknown",  # Realtime API doesn't support diarization
                     "start": start_time,
                     "end": end_time,
                     "timestamp": datetime.now().isoformat(),
                 }
                 
-                print(f"📝 Unknown: {text}", flush=True)
+                print(f"📝 Unknown: {display_text}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 save_meeting_to_db(meeting)
                 
-                # Mark that a committed transcript was received (for detecting natural pauses in batch processing)
+                # Mark that a committed transcript was received
                 stt_service.mark_committed_transcript(meeting_id)
                 
                 # Broadcast to all WebSocket connections
@@ -169,17 +190,20 @@ async def audio_streaming_endpoint(
                         transcript_entry=transcript_entry
                     )
                 except Exception as e:
-                    print(f"[WebSocket] Error broadcasting transcript: {e}")
+                    print(f"[WebSocket] ❌ Error broadcasting transcript: {e}", flush=True)
                 
-                # Send to audio streaming client
-                await websocket.send_json({
-                    "type": "transcription_result",
-                    "data": {
-                        "segments": [transcript_entry],
-                        "full_text": text,
-                        "count": 1
-                    }
-                })
+                # Send to audio streaming client (with display text)
+                try:
+                    await websocket.send_json({
+                        "type": "transcription_result",
+                        "data": {
+                            "segments": [transcript_entry],
+                            "full_text": display_text,
+                            "count": 1
+                        }
+                    })
+                except Exception as e:
+                    print(f"[WebSocket] ❌ Error sending transcription_result: {e}", flush=True)
             except Exception as e:
                 print(f"[WebSocket] Error handling committed transcript: {e}")
         
@@ -242,36 +266,75 @@ async def audio_streaming_endpoint(
             # if not segments:
             #     print(f"[WebSocket] No segments in result, full_text: {result.get('full_text', '')[:100]}")  # DEBUG
             
-            # Process each segment
+            # Process each segment (translate BEFORE showing)
+            print(f"[DEBUG] [WebSocket] 📥 Processing {len(segments)} segments from batch API", flush=True)
             new_segments = []
-            for segment in segments:
+            target_language = translation_service.get_target_language_for_user(user_id)
+            print(f"[DEBUG] [WebSocket] 🌐 Target language: {target_language}", flush=True)
+            
+            for idx, segment in enumerate(segments):
+                text = segment.get("text", "")
+                speaker = segment.get("speaker", "Unknown")
+                print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] Processing segment: speaker='{speaker}', text='{text[:50]}...'", flush=True)
+                
+                # Translate if needed BEFORE creating caption
+                display_text = text  # Default to original
+                try:
+                    print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] 🔄 Starting translation check...", flush=True)
+                    translation_result = await translation_service.translate_text(
+                        text=text,
+                        target_language=target_language
+                    )
+                    print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] ✅ Translation result: success={translation_result.get('success')}, needed={translation_result.get('translation_needed')}", flush=True)
+                    
+                    if translation_result.get("success") and translation_result.get("translation_needed"):
+                        display_text = translation_result.get("translated_text", text)
+                        print(f"🌐 Translation: {text[:50]}... → {display_text[:50]}...", flush=True)
+                    else:
+                        print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] ℹ️  No translation needed, using original", flush=True)
+                except Exception as e:
+                    print(f"[WebSocket] ⚠️  Translation error (using original text): {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    # Use original text if translation fails
+                
+                print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] 📝 Final display text: '{display_text[:50]}...'", flush=True)
+                
+                # Create transcript entry with final translated text
                 transcript_entry = {
-                    "text": segment["text"],
-                    "speaker": segment["speaker"],
+                    "text": text,  # Original text (always preserve)
+                    "translated_text": display_text,  # Text to display (translated or original)
+                    "speaker": speaker,
                     "start": segment["start"],
                     "end": segment["end"],
                     "timestamp": datetime.now().isoformat(),
                 }
                 
                 # Show transcription (clean output)
-                speaker = segment.get("speaker", "Unknown")
-                text = segment.get("text", "")
-                print(f"📝 {speaker}: {text}", flush=True)
+                print(f"📝 {speaker}: {display_text}", flush=True)
                 
+                print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] 💾 Appending to meeting transcript...", flush=True)
                 meeting["transcript"].append(transcript_entry)
                 new_segments.append(transcript_entry)
+                print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] ✅ Segment added (total: {len(meeting.get('transcript', []))})", flush=True)
                 
                 # Broadcast to all WebSocket connections for this meeting
                 try:
+                    print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] 📡 Broadcasting transcript update...", flush=True)
                     await websocket_manager.send_transcript_update(
                         meeting_id=meeting_id,
                         transcript_entry=transcript_entry
                     )
+                    print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] ✅ Broadcast complete", flush=True)
                 except Exception as e:
-                    print(f"[WebSocket] Error broadcasting transcript: {e}")  # Keep error messages
+                    print(f"[DEBUG] [WebSocket] [{idx+1}/{len(segments)}] ❌ Error broadcasting transcript: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
             
             # Save updated meeting
+            print(f"[DEBUG] [WebSocket] 💾 Saving meeting to database...", flush=True)
             save_meeting_to_db(meeting)
+            print(f"[DEBUG] [WebSocket] ✅ Meeting saved", flush=True)
             
             # Send confirmation to audio streaming client
             response_data = {
@@ -282,17 +345,21 @@ async def audio_streaming_endpoint(
                     "count": len(new_segments)
                 }
             }
-            # print(f"[WebSocket] Sending transcription_result with {len(new_segments)} segments")  # DEBUG
+            print(f"[DEBUG] [WebSocket] 📤 Sending transcription_result: type={response_data['type']}, segments={len(new_segments)}, full_text='{response_data['data']['full_text'][:50]}...'", flush=True)
             try:
                 await websocket.send_json(response_data)
-                # print(f"[WebSocket] Transcription result sent successfully")  # DEBUG
+                print(f"[DEBUG] [WebSocket] ✅ transcription_result sent successfully", flush=True)
             except (WebSocketDisconnect, RuntimeError, ConnectionError) as ws_error:
                 # WebSocket is closed or disconnected, ignore silently
-                print(f"[WebSocket] Connection closed, cannot send transcription result: {type(ws_error).__name__}")
+                print(f"[DEBUG] [WebSocket] ❌ Connection closed, cannot send transcription result: {type(ws_error).__name__}", flush=True)
+                import traceback
+                traceback.print_exc()
                 return
             except Exception as ws_error:
                 # Other WebSocket errors
-                print(f"[WebSocket] Error sending transcription result: {ws_error}")
+                print(f"[DEBUG] [WebSocket] ❌ Error sending transcription result: {ws_error}", flush=True)
+                import traceback
+                traceback.print_exc()
                 return
         except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
             # WebSocket disconnected, ignore silently
@@ -380,6 +447,7 @@ async def audio_streaming_endpoint(
                     # Use realtime API if connected, otherwise use batch API
                     if use_realtime and realtime_connected:
                         # Send directly to realtime API (no buffering needed)
+                        print(f"[DEBUG] [WebSocket] 🎤 Sending audio to realtime API...", flush=True)
                         success = await stt_service.send_audio_to_realtime(
                             meeting_id=meeting_id,
                             audio_chunk=audio_chunk
@@ -387,7 +455,7 @@ async def audio_streaming_endpoint(
                         if success:
                             print(f"[WebSocket] ✅ Sent {len(audio_chunk)} bytes to realtime API", flush=True)
                         else:
-                            print(f"[WebSocket] ⚠️  Failed to send to realtime API", flush=True)
+                            print(f"[DEBUG] [WebSocket] ⚠️  Failed to send to realtime API", flush=True)
                         
                         if not success:
                             # Realtime API failed, try to reconnect once

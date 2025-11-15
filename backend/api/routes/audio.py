@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from services.stt_service import stt_service
 from services.websocket_manager import websocket_manager
+from services.translation_service import translation_service
 from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db
 
 router = APIRouter()
@@ -65,12 +66,31 @@ async def stream_audio(
             detail=f"STT processing failed: {result.get('error', 'Unknown error')}"
         )
     
-    # Process each segment
+    # Process each segment (translate BEFORE showing)
     new_segments = []
+    target_language = translation_service.get_target_language_for_user(None)
     
     for segment in result["segments"]:
+        text = segment["text"]
+        
+        # Translate if needed BEFORE creating caption
+        display_text = text  # Default to original
+        try:
+            translation_result = await translation_service.translate_text(
+                text=text,
+                target_language=target_language
+            )
+            if translation_result.get("success") and translation_result.get("translation_needed"):
+                display_text = translation_result.get("translated_text", text)
+                print(f"🌐 Translation: {text[:50]}... → {display_text[:50]}...", flush=True)
+        except Exception as e:
+            print(f"[Audio] ⚠️  Translation error (using original text): {e}", flush=True)
+            # Use original text if translation fails
+        
+        # Create transcript entry with final translated text
         transcript_entry = {
-            "text": segment["text"],
+            "text": text,  # Original text (always preserve)
+            "translated_text": display_text,  # Text to display (translated or original)
             "speaker": segment["speaker"],
             "start": segment["start"],
             "end": segment["end"],
@@ -80,7 +100,7 @@ async def stream_audio(
         meeting["transcript"].append(transcript_entry)
         new_segments.append(transcript_entry)
         
-        # Broadcast transcript update via WebSocket
+        # Broadcast transcript update (with final text)
         await websocket_manager.send_transcript_update(
             meeting_id=x_meeting_id,
             transcript_entry=transcript_entry
@@ -153,8 +173,26 @@ async def submit_transcription(
             start_time = segment.start
             end_time = segment.end
         
+        # Translate if needed BEFORE creating caption
+        target_language = translation_service.get_target_language_for_user(None)
+        display_text = segment.text  # Default to original
+        
+        try:
+            translation_result = await translation_service.translate_text(
+                text=segment.text,
+                target_language=target_language
+            )
+            if translation_result.get("success") and translation_result.get("translation_needed"):
+                display_text = translation_result.get("translated_text", segment.text)
+                print(f"🌐 Translation: {segment.text[:50]}... → {display_text[:50]}...", flush=True)
+        except Exception as e:
+            print(f"[Audio] ⚠️  Translation error (using original text): {e}", flush=True)
+            # Use original text if translation fails
+        
+        # Create transcript entry with final translated text
         transcript_entry = {
-            "text": segment.text,
+            "text": segment.text,  # Original text (always preserve)
+            "translated_text": display_text,  # Text to display (translated or original)
             "speaker": segment.speaker or "Unknown",
             "start": start_time,
             "end": end_time,
@@ -166,9 +204,9 @@ async def submit_transcription(
         
         # Show transcription
         speaker = segment.speaker or "Unknown"
-        print(f"📝 {speaker}: {segment.text}")
+        print(f"📝 {speaker}: {display_text}")
         
-        # Broadcast transcript update via WebSocket
+        # Broadcast transcript update (with final text)
         await websocket_manager.send_transcript_update(
             meeting_id=meeting_id,
             transcript_entry=transcript_entry
