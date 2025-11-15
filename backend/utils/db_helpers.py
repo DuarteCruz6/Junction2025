@@ -135,12 +135,25 @@ def save_meeting_to_db(meeting_data: dict):
     meetings_db[meeting_data["meeting_id"]] = meeting_data
 
 
-def get_all_meetings_from_db() -> List[Dict]:
-    """Get all meetings from database or in-memory storage"""
+def get_all_meetings_from_db(include_full_data: bool = False) -> List[Dict]:
+    """Get all meetings from database or in-memory storage
+    
+    Args:
+        include_full_data: If True, includes transcript, summary, and tasks. 
+                          If False, only includes basic meeting info (faster).
+    """
     if DB_AVAILABLE and SessionLocal:
         try:
             db = SessionLocal()
-            meetings = db.query(Meeting).all()
+            # For list view, we can optimize by not loading heavy JSON fields
+            # But SQLAlchemy loads the whole object anyway, so we'll filter after
+            # Sort by start_time descending (newest first), fallback to created_at if start_time is None
+            from sqlalchemy import desc, func
+            # Use COALESCE to fallback to created_at when start_time is NULL, then sort descending
+            meetings = db.query(Meeting).order_by(
+                desc(func.coalesce(Meeting.start_time, Meeting.created_at))
+            ).all()
+            
             result = []
             for meeting in meetings:
                 # Generate title from start_time for display
@@ -148,16 +161,22 @@ def get_all_meetings_from_db() -> List[Dict]:
                 if meeting.start_time:
                     title = f"Meeting {meeting.start_time.strftime('%Y-%m-%d %H:%M')}"
                 
-                result.append({
+                meeting_dict = {
                     "meeting_id": meeting.id,
                     "title": title,
                     "start_time": meeting.start_time.isoformat() if meeting.start_time else None,
                     "end_time": meeting.end_time.isoformat() if meeting.end_time else None,
                     "status": meeting.status,
-                    "transcript": meeting.transcript or [],
-                    "summary": meeting.summary,
-                    "tasks": meeting.tasks or [],
-                })
+                }
+                
+                if include_full_data:
+                    meeting_dict.update({
+                        "transcript": meeting.transcript or [],
+                        "summary": meeting.summary,
+                        "tasks": meeting.tasks or [],
+                    })
+                
+                result.append(meeting_dict)
             db.close()
             return result
         except Exception as e:
@@ -166,17 +185,60 @@ def get_all_meetings_from_db() -> List[Dict]:
                 db.close()
     
     # Fallback to in-memory
-    return list(meetings_db.values())
-
-
-def get_meeting_speakers(meeting_id: str) -> List[Dict]:
-    """Get all speakers for a meeting by extracting from transcript"""
-    # Get meeting to extract speakers from transcript
-    meeting = get_meeting_from_db_or_memory(meeting_id)
-    if not meeting:
-        return []
+    meetings = list(meetings_db.values())
+    # Sort by start_time descending (newest first), fallback to created_at
+    def get_sort_key(m):
+        start_time = m.get("start_time")
+        if start_time:
+            try:
+                from datetime import datetime
+                if isinstance(start_time, str):
+                    return datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                return start_time
+            except:
+                pass
+        # Fallback to created_at or a very old date
+        created_at = m.get("created_at")
+        if created_at:
+            try:
+                from datetime import datetime
+                if isinstance(created_at, str):
+                    return datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                return created_at
+            except:
+                pass
+        # If no date available, put at the end
+        from datetime import datetime
+        return datetime.min
     
-    transcript = meeting.get("transcript", [])
+    meetings_sorted = sorted(meetings, key=get_sort_key, reverse=True)
+    
+    if not include_full_data:
+        # Strip out heavy data for list view
+        return [{
+            "meeting_id": m.get("meeting_id"),
+            "title": m.get("title"),
+            "start_time": m.get("start_time"),
+            "end_time": m.get("end_time"),
+            "status": m.get("status"),
+        } for m in meetings_sorted]
+    return meetings_sorted
+
+
+def get_meeting_speakers(meeting_id: str, transcript: Optional[List[Dict]] = None) -> List[Dict]:
+    """Get all speakers for a meeting by extracting from transcript
+    
+    Args:
+        meeting_id: Meeting ID
+        transcript: Optional transcript to use instead of fetching from DB
+    """
+    # Use provided transcript or get meeting to extract speakers from transcript
+    if transcript is None:
+        meeting = get_meeting_from_db_or_memory(meeting_id)
+        if not meeting:
+            return []
+        transcript = meeting.get("transcript", [])
+    
     if not transcript:
         return []
     
@@ -194,9 +256,13 @@ def get_meeting_speakers(meeting_id: str) -> List[Dict]:
     if DB_AVAILABLE and SessionLocal:
         try:
             db = SessionLocal()
+            # Batch query all speakers at once instead of one-by-one
+            speakers_db = db.query(Speaker).filter(Speaker.name.in_(speaker_names)).all()
+            speakers_dict = {s.name: s for s in speakers_db}
+            
             speakers = []
             for speaker_name in speaker_names:
-                speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
+                speaker = speakers_dict.get(speaker_name)
                 if speaker:
                     speakers.append({
                         "id": speaker.id,
@@ -222,6 +288,69 @@ def get_meeting_speakers(meeting_id: str) -> List[Dict]:
     # Fallback: return basic speaker info from transcript
     return [{"id": None, "name": name, "audio_reference": None, "created_at": None} 
             for name in speaker_names]
+
+
+def get_speakers_for_meetings_batch(meeting_transcripts: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
+    """Get speakers for multiple meetings in a single batch query
+    
+    Args:
+        meeting_transcripts: Dict mapping meeting_id to transcript list
+    
+    Returns:
+        Dict mapping meeting_id to list of speakers
+    """
+    # Collect all unique speaker names across all meetings
+    all_speaker_names = set()
+    meeting_speaker_map = {}  # meeting_id -> set of speaker names
+    
+    for meeting_id, transcript in meeting_transcripts.items():
+        speaker_names = set()
+        for segment in transcript:
+            speaker_name = segment.get("speaker", "Unknown")
+            if speaker_name and speaker_name != "Unknown":
+                speaker_names.add(speaker_name)
+                all_speaker_names.add(speaker_name)
+        meeting_speaker_map[meeting_id] = speaker_names
+    
+    if not all_speaker_names:
+        return {mid: [] for mid in meeting_transcripts.keys()}
+    
+    # Batch query all speakers at once
+    speakers_dict = {}
+    if DB_AVAILABLE and SessionLocal:
+        try:
+            db = SessionLocal()
+            speakers_db = db.query(Speaker).filter(Speaker.name.in_(all_speaker_names)).all()
+            speakers_dict = {s.name: s for s in speakers_db}
+            db.close()
+        except Exception as e:
+            print(f"Error reading speakers from database: {e}")
+            if 'db' in locals():
+                db.close()
+    
+    # Build result for each meeting
+    result = {}
+    for meeting_id, speaker_names in meeting_speaker_map.items():
+        speakers = []
+        for speaker_name in speaker_names:
+            speaker = speakers_dict.get(speaker_name)
+            if speaker:
+                speakers.append({
+                    "id": speaker.id,
+                    "name": speaker.name,
+                    "audio_reference": speaker.audio_reference,
+                    "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
+                })
+            else:
+                speakers.append({
+                    "id": None,
+                    "name": speaker_name,
+                    "audio_reference": None,
+                    "created_at": None,
+                })
+        result[meeting_id] = speakers
+    
+    return result
 
 
 def get_speaker_meetings(speaker_id: str) -> List[str]:

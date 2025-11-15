@@ -14,7 +14,10 @@ class LLMService:
     """Service for LLM-powered summarization and task extraction"""
     
     def __init__(self, model: str = "gpt-4o-mini"):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            print("[LLM] ⚠️  WARNING: OPENAI_API_KEY not found in environment variables", flush=True)
+        self.client = OpenAI(api_key=api_key) if api_key else None
         self.model = model
         
     async def summarize_meeting(
@@ -27,7 +30,7 @@ class LLMService:
         Generate meeting summary from transcript
         
         Args:
-            transcript: List of transcript segments with speaker, text, timestamp
+            transcript: List of transcript segments with text, timestamp
             previous_summary: Previous summary for incremental updates
             incremental: If True, generate incremental summary
             
@@ -35,12 +38,32 @@ class LLMService:
             Dict with summary text and metadata
         """
         try:
+            # Check if client is initialized
+            if not self.client:
+                error_msg = "OpenAI API client not initialized (missing OPENAI_API_KEY)"
+                print(f"[LLM] ❌ {error_msg}", flush=True)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "summary": previous_summary or "Error generating summary",
+                }
+            
+            # Check if transcript is empty
+            if not transcript or len(transcript) == 0:
+                error_msg = "Empty transcript - cannot generate summary"
+                print(f"[LLM] ⚠️  {error_msg}", flush=True)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "summary": previous_summary or "No transcript available",
+                }
+            
             # Format transcript for LLM
             transcript_text = self._format_transcript(transcript)
             
             # Build prompt
             if incremental and previous_summary:
-                prompt = f"""You are a meeting assistant. Generate an updated summary of the meeting based on the new transcript segments.
+                prompt = f"""You are a meeting assistant. Generate a brief updated summary of the meeting based on the new transcript segments.
 
 Previous Summary:
 {previous_summary}
@@ -48,25 +71,22 @@ Previous Summary:
 New Transcript Segments:
 {transcript_text}
 
-Provide a comprehensive, updated summary that:
+Provide a concise, updated summary (1 paragraph, maximum 3-4 sentences) that:
 1. Incorporates the new information
 2. Maintains context from previous summary
-3. Highlights key decisions, action items, and important points
-4. Is concise but complete (2-3 paragraphs)
+3. Highlights only the most important decisions and action items
 
 Updated Summary:"""
             else:
-                prompt = f"""You are a meeting assistant. Generate a comprehensive summary of this meeting.
+                prompt = f"""You are a meeting assistant. Generate a brief summary of this meeting.
 
 Transcript:
 {transcript_text}
 
-Provide a summary that:
+Provide a concise summary (1 paragraph, maximum 3-4 sentences) that:
 1. Captures the main topics discussed
 2. Highlights key decisions made
 3. Identifies important action items
-4. Notes any deadlines or commitments
-5. Is well-structured and easy to read (2-3 paragraphs)
 
 Summary:"""
             
@@ -74,11 +94,11 @@ Summary:"""
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a professional meeting assistant that creates clear, concise summaries."},
+                    {"role": "system", "content": "You are a professional meeting assistant that creates brief, concise summaries."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,  # Lower temperature for more consistent summaries
-                max_tokens=500,
+                max_tokens=200,  # Reduced for shorter summaries
             )
             
             summary_text = response.choices[0].message.content
@@ -90,9 +110,13 @@ Summary:"""
             }
             
         except Exception as e:
+            error_msg = str(e)
+            print(f"[LLM] ❌ Error generating summary: {error_msg}", flush=True)
+            import traceback
+            traceback.print_exc()
             return {
                 "success": False,
-                "error": str(e),
+                "error": error_msg,
                 "summary": previous_summary or "Error generating summary",
             }
     
@@ -208,17 +232,16 @@ JSON:"""
             }
     
     def _format_transcript(self, transcript: List[Dict[str, Any]]) -> str:
-        """Format transcript segments into readable text"""
+        """Format transcript segments into readable text (without speaker information)"""
         formatted = []
         for segment in transcript:
-            speaker = segment.get("speaker", "Unknown")
             text = segment.get("text", "")
             timestamp = segment.get("start", 0)
             
-            # Format: [00:05] Speaker: Text
+            # Format: [00:05] Text (no speaker information)
             minutes = int(timestamp // 60)
             seconds = int(timestamp % 60)
-            formatted.append(f"[{minutes:02d}:{seconds:02d}] {speaker}: {text}")
+            formatted.append(f"[{minutes:02d}:{seconds:02d}] {text}")
         
         return "\n".join(formatted)
 

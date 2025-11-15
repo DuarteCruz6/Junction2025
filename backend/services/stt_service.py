@@ -135,7 +135,7 @@ class STTService:
                     transcribe_params = {
                         "file": audio_bytes,
                         "model_id": "scribe_v1",  # ElevenLabs STT model
-                        "diarize": True,  # Enable speaker diarization
+                        "diarize": False,  # DISABLED: Speaker diarization on stand-by (keeping data flow for later)
                     }
                     
                     # Add language if specified (ElevenLabs supports language hints)
@@ -1024,6 +1024,140 @@ class STTService:
         import time
         self.last_committed_time[meeting_id] = time.time()
         # Background task will check for silence and process (checks every 5 seconds)
+    
+    async def process_remaining_buffers(
+        self,
+        meeting_id: str,
+        callback=None
+    ) -> Dict[str, Any]:
+        """
+        Process all remaining audio buffers for a meeting (called when meeting ends)
+        
+        Args:
+            meeting_id: Meeting identifier
+            callback: Optional callback function(result, meeting_id) to handle results
+            
+        Returns:
+            Dict with processing results
+        """
+        results = {
+            "streaming_processed": False,
+            "batch_processed": False,
+            "streaming_segments": 0,
+            "batch_segments": 0,
+            "errors": []
+        }
+        
+        # Check if buffers exist and have data
+        has_streaming_buffer = meeting_id in self.streaming_buffers and len(self.streaming_buffers.get(meeting_id, [])) > 0
+        has_batch_buffer = meeting_id in self.batch_processing_buffers and len(self.batch_processing_buffers.get(meeting_id, [])) > 0
+        
+        print(f"[STT] 🔍 Checking buffers for meeting {meeting_id}: streaming={has_streaming_buffer}, batch={has_batch_buffer}")
+        
+        # Process streaming buffer (batch API fallback)
+        async with self.buffer_lock:
+            if has_streaming_buffer:
+                try:
+                    print(f"[STT] 🔄 Processing remaining streaming buffer for meeting {meeting_id}...")
+                    buffer_pcm = b''.join(self.streaming_buffers[meeting_id])
+                    buffer_duration = self._calculate_audio_duration(
+                        buffer_pcm,
+                        self.SAMPLE_RATE,
+                        self.SAMPLE_WIDTH
+                    )
+                    
+                    if buffer_duration > 0.1:  # Only process if we have at least 0.1 seconds
+                        # Convert to WAV
+                        wav_data = self._pcm_to_wav(
+                            buffer_pcm,
+                            self.SAMPLE_RATE,
+                            self.CHANNELS,
+                            self.SAMPLE_WIDTH
+                        )
+                        
+                        # Process with callback
+                        result = await self._process_buffer(
+                            wav_data,
+                            meeting_id,
+                            is_final=True,  # Mark as final since meeting is ending
+                            callback=callback
+                        )
+                        
+                        if result.get("success"):
+                            segments = result.get("segments", [])
+                            results["streaming_processed"] = True
+                            results["streaming_segments"] = len(segments)
+                            print(f"[STT] ✅ Processed {len(segments)} segments from streaming buffer")
+                        else:
+                            results["errors"].append(f"Streaming buffer processing failed: {result.get('error', 'Unknown error')}")
+                            print(f"[STT] ⚠️  Streaming buffer processing failed: {result.get('error', 'Unknown error')}")
+                    
+                    # Clear the buffer after processing
+                    self.streaming_buffers[meeting_id].clear()
+                except Exception as e:
+                    error_msg = f"Error processing streaming buffer: {str(e)}"
+                    results["errors"].append(error_msg)
+                    print(f"[STT] ❌ {error_msg}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[STT] ℹ️  No streaming buffer data to process for meeting {meeting_id}")
+        
+        # Process batch processing buffer (if enabled)
+        async with self.batch_buffer_lock:
+            if has_batch_buffer:
+                try:
+                    print(f"[STT] 🔄 Processing remaining batch buffer for meeting {meeting_id}...")
+                    buffer_chunks = self.batch_processing_buffers[meeting_id]
+                    buffer_pcm = b''.join(buffer_chunks)
+                    buffer_duration = self._calculate_audio_duration(
+                        buffer_pcm,
+                        self.SAMPLE_RATE,
+                        self.SAMPLE_WIDTH
+                    )
+                    
+                    if buffer_duration > 0.1:  # Only process if we have at least 0.1 seconds
+                        # Convert to WAV
+                        wav_data = self._pcm_to_wav(
+                            buffer_pcm,
+                            self.SAMPLE_RATE,
+                            self.CHANNELS,
+                            self.SAMPLE_WIDTH
+                        )
+                        
+                        # Process with batch API (with diarization if enabled)
+                        result = await self.transcribe_with_diarization(
+                            audio_data=wav_data,
+                            audio_format="wav",
+                            language=None  # Auto-detect
+                        )
+                        
+                        if result.get("success"):
+                            segments = result.get("segments", [])
+                            results["batch_processed"] = True
+                            results["batch_segments"] = len(segments)
+                            print(f"[STT] ✅ Processed {len(segments)} segments from batch buffer")
+                            
+                            # Call callback if provided
+                            if callback:
+                                await callback(result, meeting_id)
+                        else:
+                            results["errors"].append(f"Batch buffer processing failed: {result.get('error', 'Unknown error')}")
+                            print(f"[STT] ⚠️  Batch buffer processing failed: {result.get('error', 'Unknown error')}")
+                    
+                    # Clear the buffer after processing
+                    self.batch_processing_buffers[meeting_id].clear()
+                except Exception as e:
+                    error_msg = f"Error processing batch buffer: {str(e)}"
+                    results["errors"].append(error_msg)
+                    print(f"[STT] ❌ {error_msg}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[STT] ℹ️  No batch buffer data to process for meeting {meeting_id}")
+        
+        print(f"[STT] ✅ Finished processing buffers for meeting {meeting_id}: {results}")
+        return results
     
     def clear_batch_buffer(self, meeting_id: str):
         """Clear the batch processing buffer for a meeting (synchronous)"""

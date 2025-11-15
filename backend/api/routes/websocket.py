@@ -342,7 +342,21 @@ async def audio_streaming_endpoint(
                             audio_chunk = base64.b64decode(data["data"])
                             is_final = data.get("is_final", False)
                         elif data.get("type") == "end_stream":
-                            # Final chunk
+                            # Final chunk - commit realtime transcript and wait for final results
+                            print(f"[WebSocket] 📤 Received end_stream for meeting {meeting_id}, committing realtime transcript...")
+                            if use_realtime and realtime_connected:
+                                try:
+                                    # Commit any pending realtime transcript
+                                    await stt_service.commit_realtime_transcript(meeting_id)
+                                    print(f"[WebSocket] ✅ Committed realtime transcript for meeting {meeting_id}")
+                                    
+                                    # Wait a bit for the final committed transcript to arrive
+                                    import asyncio
+                                    await asyncio.sleep(1.5)  # Wait 1.5 seconds for final transcript
+                                    print(f"[WebSocket] ⏳ Waited for final realtime transcript...")
+                                except Exception as e:
+                                    print(f"[WebSocket] ⚠️  Error committing realtime transcript: {e}")
+                            
                             is_final = True
                             audio_chunk = b""
                         elif data.get("type") == "ping":
@@ -358,9 +372,10 @@ async def audio_streaming_endpoint(
                 
                 if audio_chunk:
                     print(f"[WebSocket] 📥 Received audio chunk: {len(audio_chunk)} bytes", flush=True)
-                    # Add to batch processing buffer (for periodic diarization)
+                    # DISABLED: Add to batch processing buffer (diarization on stand-by)
+                    # Keeping buffer adding for later when diarization is re-enabled
                     # This runs in parallel with realtime transcription
-                    await stt_service.add_audio_to_batch_buffer(audio_chunk, meeting_id)
+                    # await stt_service.add_audio_to_batch_buffer(audio_chunk, meeting_id)
                     
                     # Use realtime API if connected, otherwise use batch API
                     if use_realtime and realtime_connected:
@@ -519,9 +534,19 @@ async def audio_streaming_endpoint(
         traceback.print_exc()
     finally:
         print(f"[WebSocket] Cleaning up audio stream for meeting {meeting_id}")
-        # Disconnect from realtime API if connected
+        # Before disconnecting, commit any final realtime transcripts if not already done
         try:
             if 'realtime_connected' in locals() and realtime_connected:
+                # Check if meeting is still active (if it's being stopped, the stop endpoint will handle commit)
+                meeting = get_meeting_from_db_or_memory(meeting_id)
+                if meeting and meeting.get("status") != "completed":
+                    # Meeting is still active, commit before disconnecting
+                    print(f"[WebSocket] 🔄 Committing final realtime transcript before disconnect...")
+                    await stt_service.commit_realtime_transcript(meeting_id)
+                    import asyncio
+                    await asyncio.sleep(0.5)  # Brief wait for final transcript
+                
+                # Now disconnect
                 await stt_service.disconnect_realtime(meeting_id)
         except Exception as e:
             print(f"[WebSocket] Error disconnecting realtime API: {e}")
