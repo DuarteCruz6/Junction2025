@@ -4,14 +4,29 @@ Audio streaming and STT endpoints
 
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel
 
 from services.stt_service import stt_service
 from services.websocket_manager import websocket_manager
 from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db
 
 router = APIRouter()
+
+
+class TranscriptionSegment(BaseModel):
+    """Transcription segment from Lens Studio ASR"""
+    text: str
+    speaker: Optional[str] = "Unknown"
+    start: Optional[float] = None
+    end: Optional[float] = None
+    is_final: bool = False
+
+
+class TranscriptionRequest(BaseModel):
+    """Request body for transcription submission"""
+    segments: List[TranscriptionSegment]
 
 
 @router.post("/api/audio/stream")
@@ -90,4 +105,74 @@ async def stream_audio(
             "full_text": "",
             "segments": [],
         })
+
+
+@router.post("/api/transcriptions/{meeting_id}")
+async def submit_transcription(
+    meeting_id: str,
+    request: TranscriptionRequest,
+):
+    """Receive transcriptions from Lens Studio ASR API"""
+    meeting = get_meeting_from_db_or_memory(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    if meeting.get("status") != "active":
+        raise HTTPException(status_code=400, detail="Meeting is not active")
+    
+    # Process each transcription segment
+    new_segments = []
+    current_time = datetime.now()
+    
+    for segment in request.segments:
+        # Calculate timing if not provided
+        # For Lens Studio ASR, we approximate timing based on text length
+        # Average speaking rate is ~150 words per minute = 2.5 words per second
+        if segment.start is None or segment.end is None:
+            word_count = len(segment.text.split())
+            estimated_duration = word_count / 2.5  # seconds
+            
+            # Use last segment's end time or current time
+            if meeting["transcript"]:
+                last_entry = meeting["transcript"][-1]
+                start_time = last_entry.get("end", 0.0)
+            else:
+                # First segment - calculate from meeting start
+                start_dt = datetime.fromisoformat(meeting["start_time"])
+                start_time = (current_time - start_dt).total_seconds()
+            
+            end_time = start_time + estimated_duration
+        else:
+            start_time = segment.start
+            end_time = segment.end
+        
+        transcript_entry = {
+            "text": segment.text,
+            "speaker": segment.speaker or "Unknown",
+            "start": start_time,
+            "end": end_time,
+            "timestamp": current_time.isoformat(),
+        }
+        
+        meeting["transcript"].append(transcript_entry)
+        new_segments.append(transcript_entry)
+        
+        # Show transcription
+        speaker = segment.speaker or "Unknown"
+        print(f"📝 {speaker}: {segment.text}")
+        
+        # Broadcast transcript update via WebSocket
+        await websocket_manager.send_transcript_update(
+            meeting_id=meeting_id,
+            transcript_entry=transcript_entry
+        )
+    
+    # Save updated meeting to database
+    save_meeting_to_db(meeting)
+    
+    return JSONResponse(content={
+        "success": True,
+        "segments_added": len(new_segments),
+        "segments": new_segments,
+    })
 

@@ -89,6 +89,16 @@ class Speaker(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class MeetingSpeaker(Base):
+    """Junction table linking meetings and speakers (many-to-many)"""
+    __tablename__ = "meeting_speakers"
+    
+    id = Column(String, primary_key=True)
+    meeting_id = Column(String, nullable=False, index=True)
+    speaker_id = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class UserSettings(Base):
     """User settings model"""
     __tablename__ = "user_settings"

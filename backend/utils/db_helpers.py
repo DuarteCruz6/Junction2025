@@ -7,7 +7,8 @@ from typing import Optional, Dict, List
 
 # Import database models
 try:
-    from models.database import Meeting, SessionLocal
+    from models.database import Meeting, Speaker, MeetingSpeaker, SessionLocal
+    import uuid
     DB_AVAILABLE = True
 except Exception as e:
     print(f"Database not available: {e}")
@@ -46,6 +47,57 @@ def get_meeting_from_db_or_memory(meeting_id: str) -> Optional[Dict]:
     return meetings_db.get(meeting_id)
 
 
+def _extract_and_link_speakers(meeting_id: str, transcript: List[Dict], db):
+    """Extract unique speakers from transcript and create/update speaker records and meeting links"""
+    if not transcript:
+        return
+    
+    # Extract unique speaker names from transcript
+    speaker_names = set()
+    for segment in transcript:
+        speaker_name = segment.get("speaker", "Unknown")
+        if speaker_name and speaker_name != "Unknown":
+            speaker_names.add(speaker_name)
+    
+    if not speaker_names:
+        return  # No speakers to process
+    
+    print(f"[DB] Extracting speakers for meeting {meeting_id}: {speaker_names}")
+    
+    # Get existing meeting-speaker links
+    existing_links = db.query(MeetingSpeaker).filter(
+        MeetingSpeaker.meeting_id == meeting_id
+    ).all()
+    existing_speaker_ids = {link.speaker_id for link in existing_links}
+    
+    # Process each speaker
+    for speaker_name in speaker_names:
+        # Find or create speaker
+        speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
+        if not speaker:
+            # Create new speaker (unknown user for now)
+            speaker = Speaker(
+                id=str(uuid.uuid4()),
+                name=speaker_name,
+                audio_reference=None,  # No audio reference for auto-detected speakers
+            )
+            db.add(speaker)
+            db.flush()  # Flush to get the speaker ID
+            print(f"[DB] Created new speaker: {speaker_name} (ID: {speaker.id})")
+        else:
+            print(f"[DB] Found existing speaker: {speaker_name} (ID: {speaker.id})")
+        
+        # Create meeting-speaker link if it doesn't exist
+        if speaker.id not in existing_speaker_ids:
+            meeting_speaker = MeetingSpeaker(
+                id=str(uuid.uuid4()),
+                meeting_id=meeting_id,
+                speaker_id=speaker.id,
+            )
+            db.add(meeting_speaker)
+            print(f"[DB] Linked speaker {speaker_name} to meeting {meeting_id}")
+
+
 def save_meeting_to_db(meeting_data: dict):
     """Save meeting to database or in-memory storage"""
     if DB_AVAILABLE and SessionLocal:
@@ -74,6 +126,11 @@ def save_meeting_to_db(meeting_data: dict):
                     tasks=meeting_data.get("tasks", []),
                 )
                 db.add(meeting)
+            
+            # Extract and link speakers from transcript
+            transcript = meeting_data.get("transcript", [])
+            if transcript:
+                _extract_and_link_speakers(meeting_data["meeting_id"], transcript, db)
             
             db.commit()
             db.close()
@@ -113,4 +170,94 @@ def get_all_meetings_from_db() -> List[Dict]:
     
     # Fallback to in-memory
     return list(meetings_db.values())
+
+
+def get_meeting_speakers(meeting_id: str) -> List[Dict]:
+    """Get all speakers for a meeting"""
+    if DB_AVAILABLE and SessionLocal:
+        try:
+            db = SessionLocal()
+            # Get all meeting-speaker links for this meeting
+            links = db.query(MeetingSpeaker).filter(
+                MeetingSpeaker.meeting_id == meeting_id
+            ).all()
+            
+            # Get speaker details
+            speakers = []
+            for link in links:
+                speaker = db.query(Speaker).filter(Speaker.id == link.speaker_id).first()
+                if speaker:
+                    speakers.append({
+                        "id": speaker.id,
+                        "name": speaker.name,
+                        "audio_reference": speaker.audio_reference,
+                        "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
+                    })
+            
+            db.close()
+            return speakers
+        except Exception as e:
+            print(f"Error reading speakers from database: {e}")
+            if 'db' in locals():
+                db.close()
+    
+    # Fallback: extract speakers from transcript in memory
+    meeting = meetings_db.get(meeting_id)
+    if meeting:
+        transcript = meeting.get("transcript", [])
+        speaker_names = set()
+        for segment in transcript:
+            speaker_name = segment.get("speaker", "Unknown")
+            if speaker_name and speaker_name != "Unknown":
+                speaker_names.add(speaker_name)
+        
+        return [{"id": None, "name": name, "audio_reference": None, "created_at": None} 
+                for name in speaker_names]
+    
+    return []
+
+
+def get_speaker_meetings(speaker_id: str) -> List[str]:
+    """Get all meeting IDs for a speaker"""
+    if DB_AVAILABLE and SessionLocal:
+        try:
+            db = SessionLocal()
+            # Get all meeting-speaker links for this speaker
+            links = db.query(MeetingSpeaker).filter(
+                MeetingSpeaker.speaker_id == speaker_id
+            ).all()
+            
+            meeting_ids = [link.meeting_id for link in links]
+            db.close()
+            return meeting_ids
+        except Exception as e:
+            print(f"Error reading meetings for speaker from database: {e}")
+            if 'db' in locals():
+                db.close()
+    
+    return []
+
+
+def get_speaker_by_name(speaker_name: str) -> Optional[Dict]:
+    """Get speaker by name"""
+    if DB_AVAILABLE and SessionLocal:
+        try:
+            db = SessionLocal()
+            speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
+            if speaker:
+                result = {
+                    "id": speaker.id,
+                    "name": speaker.name,
+                    "audio_reference": speaker.audio_reference,
+                    "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
+                }
+                db.close()
+                return result
+            db.close()
+        except Exception as e:
+            print(f"Error reading speaker from database: {e}")
+            if 'db' in locals():
+                db.close()
+    
+    return None
 

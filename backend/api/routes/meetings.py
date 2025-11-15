@@ -10,7 +10,7 @@ import asyncio
 
 from services.llm_service import llm_service
 from services.websocket_manager import websocket_manager
-from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db
+from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db, get_meeting_speakers
 from utils.storage import meetings_db, audio_streams, background_tasks
 from services.background_tasks import process_summary_update, process_task_extraction
 
@@ -106,13 +106,28 @@ async def get_meeting(meeting_id: str):
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    return JSONResponse(content=meeting)
+    # Get speakers for this meeting
+    speakers = get_meeting_speakers(meeting_id)
+    
+    # Add speakers to meeting response
+    meeting_with_speakers = meeting.copy()
+    meeting_with_speakers["speakers"] = speakers
+    
+    return JSONResponse(content=meeting_with_speakers)
 
 
 @router.get("/api/meetings")
 async def get_meetings():
     """Get all meetings (history)"""
     meetings = get_all_meetings_from_db()
+    
+    # Add speakers to each meeting
+    for meeting in meetings:
+        meeting_id = meeting.get("meeting_id")
+        if meeting_id:
+            speakers = get_meeting_speakers(meeting_id)
+            meeting["speakers"] = speakers
+    
     return JSONResponse(content={"meetings": meetings})
 
 
