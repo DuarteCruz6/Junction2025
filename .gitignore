@@ -12,6 +12,7 @@ Thumbs.db
 .env.local
 .env.*.local
 *.env
+*.pyc
 
 # Backend (Python)
 __pycache__
