@@ -59,3 +59,8 @@ coverage/
 *.tmp
 *.temp
 .cache/
+backend/services/*.pyc
+backend/services/__pycache__/llm_service.cpython-311.pyc
+backend/services/__pycache__/stt_service.cpython-311.pyc
+backend/services/__pycache__/websocket_manager.cpython-311.pyc
+backend/services/__pycache__/__init__.cpython-311.pyc

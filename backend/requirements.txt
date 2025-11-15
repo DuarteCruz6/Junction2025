@@ -22,8 +22,9 @@ redis==5.2.0
 celery==5.4.0
 
 # WebSocket support (built into FastAPI, but adding for clarity)
-# Note: Using 12.x for Supabase realtime compatibility
-websockets>=12.0,<13.0
+# Note: ElevenLabs realtime API requires websockets 14.0+ for additional_headers support
+# If Supabase compatibility is needed, test with websockets 14.0+
+websockets>=14.0
 
 # Utilities
 pydantic>=2.11.7,<3.0.0

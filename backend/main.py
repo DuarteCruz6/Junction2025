@@ -4,12 +4,19 @@ Main entry point for the backend API
 Enterprise Meeting AR - Spectacles Integration
 """
 
+import sys
+print("=" * 60)
+print("🚀 Starting Junction2025 Backend...")
+print("=" * 60)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+print("📦 Importing route routers...")
 # Import route routers
 from api.routes import health, meetings, audio, tasks, speakers, persons, settings
+print("✅ Route routers imported")
 
 # Import database initialization
 try:
@@ -55,9 +62,17 @@ app.include_router(persons.router)
 app.include_router(settings.router)
 
 # WebSocket routes need to be added directly (FastAPI routers don't support WebSocket)
+print("📡 Importing WebSocket endpoints...")
 from api.routes.websocket import websocket_endpoint, audio_streaming_endpoint
+print("✅ WebSocket endpoints imported")
 app.websocket("/ws/meetings/{meeting_id}")(websocket_endpoint)
 app.websocket("/ws/audio/{meeting_id}")(audio_streaming_endpoint)
+print("✅ WebSocket routes registered:")
+print("   - /ws/meetings/{meeting_id}")
+print("   - /ws/audio/{meeting_id}")
+print("=" * 60)
+print("✅ Backend initialization complete!")
+print("=" * 60)
 
 
 if __name__ == "__main__":
