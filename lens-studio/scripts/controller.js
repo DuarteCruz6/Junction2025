@@ -9,8 +9,11 @@
 // @input Component.ScriptComponent captionsScript
 // @input Component.ScriptComponent handTrackingScript
 // @input Component.ScriptComponent asrScript
+// @input Component.ScriptComponent meeting_text
+// @input Component.ScriptComponent touch_events
 
-const controller = script.apiContext.entity;
+// Get controller entity safely (if needed)
+// const controller = (script.apiContext && script.apiContext.entity) ? script.apiContext.entity : null;
 
 // Application state
 let isAIActive = false;
@@ -21,26 +24,58 @@ let updateInterval = null;
 let startStopButton = null;
 let statusIndicator = null;
 
+// Store API client reference (don't assign to script.apiClient - it's read-only)
+let apiClient = null;
+
 function initialize() {
-    print("Controller: Initializing...");
+    print("=== Controller: Initializing... ===");
     
-    // Create start/stop button
-    createStartStopButton();
+    // Get API client from script component or global
+    if (script.apiClientScript && script.apiClientScript.script) {
+        apiClient = script.apiClientScript.script.apiClient;
+        print("=== Controller: API client connected via script component ===");
+    } else if (typeof script.apiClient !== "undefined") {
+        apiClient = script.apiClient;
+        print("=== Controller: API client already available globally ===");
+    } else {
+        print("=== Controller: Warning - API client not found ===");
+    }
+    
+    // Set up initial text
+    if (script.meeting_text) {
+        try {
+            script.meeting_text.text = "Tap to start meeting.";
+        } catch (e) {
+            print("Controller: Could not set initial text - " + e);
+        }
+    }
     
     // Set up periodic updates
     setupPeriodicUpdates();
     
-    print("Controller: Initialized");
+    // Set up tap handler
+    setupTapHandler();
+    
+    print("=== Controller: Initialized ===");
+    print("=== Controller: ASR Script available: " + (script.asrScript ? "YES" : "NO") + " ===");
+    print("=== Controller: API Client available: " + (script.apiClient ? "YES" : "NO") + " ===");
 }
 
-function createStartStopButton() {
-    // Create button entity (you'll need to set this up in Lens Studio scene)
-    // This is a placeholder - actual implementation depends on your scene setup
-    
-    // Example: Create a plane with texture for the button
-    // You'll configure this in Lens Studio's visual editor
-    
-    print("Controller: Start/Stop button created");
+function setupTapHandler() {
+    if (script.touch_events) {
+        script.touch_events.onTap.add(function(tapX, tapY) {
+            handleTap();
+        });
+        print("=== Controller: Tap handler configured ===");
+    } else {
+        print("=== Controller: Warning - touch_events not connected ===");
+        // Fallback: Use TapEvent
+        const tapEvent = script.createEvent("TapEvent");
+        tapEvent.bind(function() {
+            print("=== TapEvent triggered (fallback) ===");
+            handleTap();
+        });
+    }
 }
 
 function setupPeriodicUpdates() {
@@ -51,6 +86,26 @@ function setupPeriodicUpdates() {
             updateUI();
         }
     });
+}
+
+function handleTap() {
+    print("=== handleTap() called ===");
+    if (!isAIActive) {
+        // Start meeting and AI
+        startAI().catch(function(error) {
+            print("Controller: Error starting AI - " + error.message);
+            if (script.meeting_text) {
+                try {
+                    script.meeting_text.text = "Error: " + error.message;
+                } catch (e) {}
+            }
+        });
+    } else {
+        // Stop meeting and AI
+        stopAI().catch(function(error) {
+            print("Controller: Error stopping AI - " + error.message);
+        });
+    }
 }
 
 async function toggleAI() {
@@ -70,17 +125,50 @@ async function toggleAI() {
 async function startAI() {
     print("Controller: Starting AI...");
     
+    // Update text
+    if (script.meeting_text) {
+        try {
+            script.meeting_text.text = "Meeting is starting...";
+        } catch (e) {}
+    }
+    
+    // Disable touch events while starting
+    if (script.touch_events) {
+        script.touch_events.enabled = false;
+    }
+    
     try {
         // Start meeting session
-        const meetingData = await script.apiClient.startMeeting();
+        const client = apiClient || script.apiClient;
+        if (!client) {
+            throw new Error("API client not available");
+        }
+        const meetingData = await client.startMeeting();
         meetingStartTime = new Date();
         isAIActive = true;
         
-        // Start ASR transcription
-        if (script.asrScript && script.asrScript.api) {
+        // Update text
+        if (script.meeting_text) {
             try {
-                script.asrScript.api.startTranscribing();
-                print("Controller: ASR transcription started");
+                script.meeting_text.text = "Meeting active. Tap to stop.";
+            } catch (e) {}
+        }
+        
+        // Re-enable touch events
+        if (script.touch_events) {
+            script.touch_events.enabled = true;
+        }
+        
+        // Start ASR transcription
+        if (script.asrScript) {
+            try {
+                // Access public methods directly from TypeScript component
+                if (script.asrScript.startTranscribing) {
+                    script.asrScript.startTranscribing();
+                    print("Controller: ASR transcription started");
+                } else {
+                    print("Controller: Warning - startTranscribing method not found on ASR script");
+                }
             } catch (error) {
                 print(`Controller: Warning - Could not start ASR: ${error.message}`);
             }
@@ -89,11 +177,11 @@ async function startAI() {
         }
         
         // Enable UI components
-        if (script.captionsScript) {
-            script.captionsScript.api.enable();
+        if (script.captionsScript && script.captionsScript.enable) {
+            script.captionsScript.enable();
         }
         
-        if (script.uiManagerScript) {
+        if (script.uiManagerScript && script.uiManagerScript.api && script.uiManagerScript.api.enable) {
             script.uiManagerScript.api.enable();
         }
         
@@ -103,6 +191,16 @@ async function startAI() {
         print(`Controller: AI started - Meeting ID: ${meetingData.meeting_id}`);
     } catch (error) {
         print(`Controller: Failed to start AI - ${error.message}`);
+        // Update text on error
+        if (script.meeting_text) {
+            try {
+                script.meeting_text.text = "Error: " + error.message + ". Tap to retry.";
+            } catch (e) {}
+        }
+        // Re-enable touch events on error
+        if (script.touch_events) {
+            script.touch_events.enabled = true;
+        }
         throw error;
     }
 }
@@ -110,28 +208,59 @@ async function startAI() {
 async function stopAI() {
     print("Controller: Stopping AI...");
     
+    // Update text
+    if (script.meeting_text) {
+        try {
+            script.meeting_text.text = "Stopping meeting...";
+        } catch (e) {}
+    }
+    
+    // Disable touch events while stopping
+    if (script.touch_events) {
+        script.touch_events.enabled = false;
+    }
+    
     try {
         // Stop ASR transcription first
-        if (script.asrScript && script.asrScript.api) {
+        if (script.asrScript) {
             try {
-                script.asrScript.api.stopTranscribing();
-                print("Controller: ASR transcription stopped");
+                // Access public methods directly from TypeScript component
+                if (script.asrScript.stopTranscribing) {
+                    script.asrScript.stopTranscribing();
+                    print("Controller: ASR transcription stopped");
+                }
             } catch (error) {
                 print(`Controller: Warning - Could not stop ASR: ${error.message}`);
             }
         }
         
         // Stop meeting session
-        const meetingData = await script.apiClient.stopMeeting();
+        const client = apiClient || script.apiClient;
+        if (!client) {
+            throw new Error("API client not available");
+        }
+        const meetingData = await client.stopMeeting();
         isAIActive = false;
         meetingStartTime = null;
         
-        // Disable UI components
-        if (script.captionsScript) {
-            script.captionsScript.api.disable();
+        // Update text
+        if (script.meeting_text) {
+            try {
+                script.meeting_text.text = "Tap to start meeting.";
+            } catch (e) {}
         }
         
-        if (script.uiManagerScript) {
+        // Re-enable touch events
+        if (script.touch_events) {
+            script.touch_events.enabled = true;
+        }
+        
+        // Disable UI components
+        if (script.captionsScript && script.captionsScript.disable) {
+            script.captionsScript.disable();
+        }
+        
+        if (script.uiManagerScript && script.uiManagerScript.api && script.uiManagerScript.api.disable) {
             script.uiManagerScript.api.disable();
         }
         
@@ -141,6 +270,16 @@ async function stopAI() {
         print(`Controller: AI stopped - Meeting ID: ${meetingData.meeting_id}`);
     } catch (error) {
         print(`Controller: Failed to stop AI - ${error.message}`);
+        // Update text on error
+        if (script.meeting_text) {
+            try {
+                script.meeting_text.text = "Error stopping. Tap to retry.";
+            } catch (e) {}
+        }
+        // Re-enable touch events on error
+        if (script.touch_events) {
+            script.touch_events.enabled = true;
+        }
         throw error;
     }
 }
@@ -158,15 +297,18 @@ async function updateUI() {
     if (!isAIActive) return;
     
     try {
+        const client = apiClient || script.apiClient;
+        if (!client) return;
+        
         // Get latest summary
-        const summary = await script.apiClient.getMeetingSummary();
-        if (script.uiManagerScript && summary) {
+        const summary = await client.getMeetingSummary();
+        if (script.uiManagerScript && script.uiManagerScript.api && script.uiManagerScript.api.updateSummary && summary) {
             script.uiManagerScript.api.updateSummary(summary);
         }
         
         // Get latest tasks
-        const tasks = await script.apiClient.getTasks();
-        if (script.uiManagerScript && tasks) {
+        const tasks = await client.getTasks();
+        if (script.uiManagerScript && script.uiManagerScript.api && script.uiManagerScript.api.updateTasks && tasks) {
             script.uiManagerScript.api.updateTasks(tasks);
         }
     } catch (error) {
@@ -175,19 +317,31 @@ async function updateUI() {
     }
 }
 
-// Public API
-script.api = {
-    toggleAI: toggleAI,
-    isActive: () => isAIActive,
-    getMeetingId: () => script.apiClient.currentMeetingId,
+// Public API - initialize in onAwake or use getter pattern
+// Note: script.api is read-only, so we'll expose methods directly on script
+script.toggleAI = toggleAI;
+script.isActive = () => isAIActive;
+script.getMeetingId = () => {
+    const client = apiClient || script.apiClient;
+    return client ? client.currentMeetingId : null;
+};
+// Test function - can be called directly
+script.testASR = async function() {
+    print("Test: Starting meeting and ASR...");
+    await startAI();
+    print("Test: Meeting started. Speak into microphone now!");
+    print("Test: Will auto-stop after 30 seconds...");
+    setTimeout(async () => {
+        await stopAI();
+        print("Test: Stopped");
+    }, 30000);
 };
 
 // Initialize on start
-initialize();
-
-// Handle button tap (configure in Lens Studio)
-const tapEvent = script.createEvent("TapEvent");
-tapEvent.bind(function() {
-    toggleAI();
-});
+try {
+    initialize();
+} catch (e) {
+    print("=== Controller: Error in initialize ===");
+    print(e);
+}
 

@@ -4,9 +4,8 @@
  * Supports pinch, drag, hide/show gestures
  */
 
-// @input Component.HandTrackingComponent handTracking
-
-const handTracking = script.apiContext.entity;
+// @input SceneObject handTrackingEntity
+// Note: Connect to an entity that has a HandTracking component attached
 
 // Gesture state
 let isPinching = false;
@@ -17,11 +16,56 @@ let lastHandPosition = null;
 // UI Elements that can be interacted with
 let interactiveElements = [];
 
+// Hand tracking component reference
+let handTrackingComponent = null;
+
 function initialize() {
     print("Hand Tracking: Initializing...");
     
-    if (!script.handTracking) {
+    // Try to get hand tracking component from input entity
+    if (script.handTrackingEntity) {
+        try {
+            handTrackingComponent = script.handTrackingEntity.getComponent("Component.HandTracking");
+            if (handTrackingComponent) {
+                print("Hand Tracking: Found component on input entity");
+            }
+        } catch (e) {
+            print("Hand Tracking: Error getting component from entity - " + e);
+        }
+    }
+    
+    // If not found, try to find it in the scene (optional - can skip if not needed)
+    if (!handTrackingComponent) {
+        try {
+            // Access scene through global Scene object
+            const scene = global.Scene;
+            if (scene && scene.getRoot) {
+                const root = scene.getRoot();
+                if (root && root.getChildren) {
+                    const children = root.getChildren();
+                    for (let i = 0; i < children.length; i++) {
+                        const entity = children[i];
+                        if (entity && entity.getComponent) {
+                            const component = entity.getComponent("Component.HandTracking");
+                            if (component) {
+                                handTrackingComponent = component;
+                                print("Hand Tracking: Found component in scene");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // Scene search failed, that's okay
+            print("Hand Tracking: Could not search scene - " + e);
+        }
+    }
+    
+    if (!handTrackingComponent) {
         print("Hand Tracking: Warning - No hand tracking component found");
+        print("Hand Tracking: Hand tracking features will be disabled");
+        print("Hand Tracking: To enable, connect handTrackingEntity input to an entity with HandTracking component");
         return;
     }
     
@@ -35,7 +79,7 @@ function setupGestureDetection() {
     // Create update event for continuous hand tracking
     const updateEvent = script.createEvent("UpdateEvent");
     updateEvent.bind(function() {
-        if (script.handTracking) {
+        if (handTrackingComponent) {
             processHandGestures();
         }
     });
@@ -43,7 +87,7 @@ function setupGestureDetection() {
 
 function processHandGestures() {
     // Get hand tracking data
-    const hands = script.handTracking.getHands();
+    const hands = handTrackingComponent.getHands();
     
     if (hands.length === 0) {
         if (isPinching) {
@@ -176,13 +220,11 @@ function detectShowGesture() {
     // This could be a specific hand pose or gesture
 }
 
-// Public API
-script.api = {
-    registerElement: registerInteractiveElement,
-    unregisterElement: unregisterInteractiveElement,
-    isPinching: () => isPinching,
-    getSelectedElement: () => selectedElement,
-};
+// Public API - assign methods directly to script (script.api is read-only)
+script.registerElement = registerInteractiveElement;
+script.unregisterElement = unregisterInteractiveElement;
+script.isPinching = () => isPinching;
+script.getSelectedElement = () => selectedElement;
 
 // Initialize
 initialize();

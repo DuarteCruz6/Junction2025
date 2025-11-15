@@ -7,7 +7,8 @@
 // @input Component.ScriptComponent apiClientScript
 // @input Component.AudioComponent audioComponent
 
-const captions = script.apiContext.entity;
+// Get captions entity safely (if needed)
+// const captions = (script.apiContext && script.apiContext.entity) ? script.apiContext.entity : null;
 
 // Caption display elements
 let captionText = null;
@@ -284,47 +285,45 @@ function setTranslationPosition(position) {
     }
 }
 
-// Public API
-script.api = {
-    enable: function() {
-        isEnabled = true;
-        startAudioCapture();
-        showCaptions();
-        print("Captions: Enabled");
-    },
-    
-    disable: function() {
-        isEnabled = false;
-        hideCaptions();
-        clearCaptions();
-        
-        // Send any remaining audio
-        if (audioBuffer.length > 0) {
-            sendAudioChunk(true);
-        }
-        
-        // Disable microphone
-        if (microphoneAudioProvider) {
-            microphoneAudioProvider.enabled = false;
-        }
-        
-        // Clear audio buffer
-        audioBuffer = [];
-        vadState.isSpeech = false;
-        vadState.silenceDuration = 0;
-        vadState.speechDuration = 0;
-        
-        print("Captions: Disabled");
-    },
-    
-    updateCaption: updateCaption,
-    updateTranslation: updateTranslation,
-    showCaptions: showCaptions,
-    hideCaptions: hideCaptions,
-    setCaptionPosition: setCaptionPosition,
-    setTranslationPosition: setTranslationPosition,
-    getHistory: () => captionHistory,
+// Public API - assign methods directly to script (script.api is read-only)
+script.enable = function() {
+    isEnabled = true;
+    startAudioCapture();
+    showCaptions();
+    print("Captions: Enabled");
 };
+
+script.disable = function() {
+    isEnabled = false;
+    hideCaptions();
+    clearCaptions();
+    
+    // Send any remaining audio
+    if (audioBuffer.length > 0) {
+        sendAudioChunk(true);
+    }
+    
+    // Disable microphone
+    if (microphoneAudioProvider) {
+        microphoneAudioProvider.enabled = false;
+    }
+    
+    // Clear audio buffer
+    audioBuffer = [];
+    vadState.isSpeech = false;
+    vadState.silenceDuration = 0;
+    vadState.speechDuration = 0;
+    
+    print("Captions: Disabled");
+};
+
+script.updateCaption = updateCaption;
+script.updateTranslation = updateTranslation;
+script.showCaptions = showCaptions;
+script.hideCaptions = hideCaptions;
+script.setCaptionPosition = setCaptionPosition;
+script.setTranslationPosition = setTranslationPosition;
+script.getHistory = () => captionHistory;
 
 // Initialize
 initialize();

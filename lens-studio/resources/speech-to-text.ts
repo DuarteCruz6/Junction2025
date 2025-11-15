@@ -6,15 +6,23 @@ export class AsrExample extends BaseScriptComponent {
   private asrModule = require('LensStudio:AsrModule');
   private isTranscribing = false;
   private apiClient: any = null;
+  
+  // Public methods - accessible directly from JavaScript
+  // These can be called via script.asrScript.startTranscribing() etc.
 
   /**
    * Initialize the component and get API client reference
    */
   onAwake(): void {
+    // Force print to verify component is loading
+    print('=== ASR Component: onAwake() called ===');
+    
     // Get API client from input script component
     // In Lens Studio, JavaScript scripts expose properties on the script object
     // We access it through the ScriptComponent input
     this.updateApiClientReference();
+    
+    print('=== ASR Component: Initialization complete ===');
   }
 
   /**
@@ -27,18 +35,40 @@ export class AsrExample extends BaseScriptComponent {
       if (this.apiClientScript) {
         const scriptObj = (this.apiClientScript as any);
         
-        // Try accessing apiClient directly (if exposed on script object)
+        // Method 1: Try accessing through script.apiClient (JavaScript exposes it this way)
+        // In Lens Studio, JavaScript scripts expose properties via the script object
+        // We need to get the script context from the ScriptComponent
+        try {
+          // Access the script object from the ScriptComponent
+          // The ScriptComponent has a reference to the script context
+          if (scriptObj.script && scriptObj.script.apiClient) {
+            this.apiClient = scriptObj.script.apiClient;
+            print('ASR: API client connected via script.apiClient');
+            return;
+          }
+        } catch (e) {
+          // Continue to next method
+        }
+        
+        // Method 2: Try accessing apiClient directly on the component
         if (scriptObj.apiClient) {
           this.apiClient = scriptObj.apiClient;
-          print('ASR: API client connected via input script (direct)');
+          print('ASR: API client connected via direct property');
           return;
         }
         
-        // Try accessing through script context
-        if (scriptObj.script && scriptObj.script.apiClient) {
-          this.apiClient = scriptObj.script.apiClient;
-          print('ASR: API client connected via script context');
-          return;
+        // Method 3: Try getting the script via getScript() if available
+        if (typeof scriptObj.getScript === 'function') {
+          try {
+            const script = scriptObj.getScript();
+            if (script && script.apiClient) {
+              this.apiClient = script.apiClient;
+              print('ASR: API client connected via getScript()');
+              return;
+            }
+          } catch (e) {
+            // Continue
+          }
         }
       }
       
@@ -50,8 +80,9 @@ export class AsrExample extends BaseScriptComponent {
 
   /**
    * Start transcription session
+   * Public method accessible from JavaScript
    */
-  startTranscribing(): void {
+  public startTranscribing(): void {
     if (this.isTranscribing) {
       print('ASR: Already transcribing');
       return;
@@ -79,8 +110,9 @@ export class AsrExample extends BaseScriptComponent {
 
   /**
    * Stop transcription session
+   * Public method accessible from JavaScript
    */
-  stopTranscribing(): void {
+  public stopTranscribing(): void {
     if (!this.isTranscribing) {
       return;
     }
@@ -108,23 +140,34 @@ export class AsrExample extends BaseScriptComponent {
       this.updateApiClientReference();
     }
 
+    // Debug: Log current state
+    if (isFinal) {
+      print(`ASR: Debug - apiClient exists: ${!!this.apiClient}, meetingId: ${this.apiClient ? this.apiClient.currentMeetingId : 'N/A'}`);
+    }
+
     // Send transcription to backend if API client is available
     if (this.apiClient && this.apiClient.currentMeetingId) {
       try {
-        await this.apiClient.sendTranscription(text, isFinal, "Unknown");
+        print(`ASR: Sending transcription to backend - meetingId: ${this.apiClient.currentMeetingId}, text: "${text}"`);
+        const result = await this.apiClient.sendTranscription(text, isFinal, "Unknown");
         if (isFinal) {
-          print(`ASR: Final transcription sent to backend: "${text}"`);
+          print(`ASR: Final transcription sent to backend: "${text}", result: ${JSON.stringify(result)}`);
         }
       } catch (error) {
         print(`ASR: Error sending transcription to backend: ${error}`);
+        // Also log the full error details
+        if (error && error.message) {
+          print(`ASR: Error details: ${error.message}`);
+        }
       }
     } else {
-      // If no API client or no active meeting, just log (only for final transcriptions to reduce spam)
+      // If no API client or no active meeting, log the issue
       if (isFinal) {
         if (!this.apiClient) {
-          print('ASR: API client not available, transcription not sent');
+          print('ASR: ERROR - API client not available, transcription not sent');
         } else if (!this.apiClient.currentMeetingId) {
-          print('ASR: No active meeting, transcription not sent');
+          print(`ASR: ERROR - No active meeting (currentMeetingId is ${this.apiClient.currentMeetingId}), transcription not sent`);
+          print('ASR: Make sure to start a meeting before speaking');
         }
       }
     }

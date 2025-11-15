@@ -113,12 +113,19 @@ async def submit_transcription(
     request: TranscriptionRequest,
 ):
     """Receive transcriptions from Lens Studio ASR API"""
+    print(f"[Backend] Received transcription request for meeting {meeting_id}")
+    print(f"[Backend] Segments count: {len(request.segments)}")
+    
     meeting = get_meeting_from_db_or_memory(meeting_id)
     if not meeting:
+        print(f"[Backend] ERROR: Meeting {meeting_id} not found")
         raise HTTPException(status_code=404, detail="Meeting not found")
     
     if meeting.get("status") != "active":
+        print(f"[Backend] ERROR: Meeting {meeting_id} is not active (status: {meeting.get('status')})")
         raise HTTPException(status_code=400, detail="Meeting is not active")
+    
+    print(f"[Backend] Meeting {meeting_id} is active, processing transcriptions...")
     
     # Process each transcription segment
     new_segments = []
