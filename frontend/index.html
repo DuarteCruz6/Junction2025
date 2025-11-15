@@ -159,29 +159,41 @@
 
         #transcript {
             position: fixed;
-            bottom: 80px;
-            left: 20px;
-            right: 20px;
-            max-height: 300px;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 600px;
+            width: calc(100% - 40px);
+            max-height: 120px;
             overflow-y: auto;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.5);
             color: white;
-            padding: 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            line-height: 1.6;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 16px;
+            line-height: 1.5;
             z-index: 1000;
+            text-align: center;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
         }
 
         #transcript.hidden {
             display: none;
         }
 
+        #transcript:empty,
+        #transcript.empty {
+            display: none;
+        }
+
         .transcript-entry {
-            margin-bottom: 8px;
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
+            margin-bottom: 4px;
+            padding: 0;
+            background: transparent;
+            border-radius: 0;
+            text-align: center;
         }
 
         .transcript-word {
@@ -196,18 +208,18 @@
         }
         
         .transcript-entry-partial {
-            background: rgba(76, 175, 80, 0.2);
-            border-left: 3px solid #4CAF50;
+            background: transparent;
+            border-left: none;
+            text-align: center;
         }
 
         .transcript-speaker {
-            font-weight: 600;
-            color: #4CAF50;
-            margin-right: 8px;
+            display: none;
         }
 
         .transcript-text {
             color: #fff;
+            text-align: center;
         }
 
         /* Scrollbar styling */
@@ -1038,8 +1050,11 @@
         const STREAMING_BATCH_SIZE = 3; // Send every 3 chunks (~384ms) for balance between latency and efficiency
         const MIN_BATCH_DURATION = 0.2; // Minimum 200ms before sending (prevents too many tiny sends)
         
-        // Caption display duration (6 seconds)
-        const CAPTION_DISPLAY_DURATION = 6000; // milliseconds
+        // Caption display duration (3 seconds)
+        const CAPTION_DISPLAY_DURATION = 3000; // milliseconds
+        
+        // Maximum characters in subtitles (NEVER exceed this)
+        const MAX_SUBTITLE_CHARACTERS = 120;
 
         // State
         let localStream = null;
@@ -1214,7 +1229,7 @@
 
                 // Create AudioContext
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: SAMPLE_RATE
+                    //sampleRate: SAMPLE_RATE
                 });
 
                 // Create AudioWorklet processor inline
@@ -1278,14 +1293,10 @@
                     processAudioChunk(inputData);
                 };
 
-                // Create a gain node with 0 gain to avoid feedback
-                const gainNode = audioContext.createGain();
-                gainNode.gain.value = 0;
-
-                // Connect nodes
+                // Connect nodes - only connect source to processor, do NOT connect to destination
+                // This prevents microphone audio from being played back through speakers
                 source.connect(processor);
-                processor.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                // Note: processor output is not connected to audioContext.destination to avoid feedback
 
                 console.log('🎙️ Audio capture started');
             } catch (error) {
@@ -1345,7 +1356,9 @@
                 aiToggle.checked = true;
                 aiToggle.disabled = false;
                 showNotification('Meeting active', 3000);
+                // Remove hidden class, but keep empty class so it stays hidden until content appears
                 transcriptDiv.classList.remove('hidden');
+                transcriptDiv.classList.add('empty');
                 
             } catch (error) {
                 console.error('[Frontend] ❌ Error starting meeting:', error);
@@ -1454,11 +1467,70 @@
                 existingPartial.remove();
             }
             
+            // Truncate text to fit within character limit (from beginning, whole words only)
+            const currentChars = getTotalCharacterCount();
+            const availableChars = MAX_SUBTITLE_CHARACTERS - currentChars;
+            
+            // If no space available, remove oldest entries first
+            if (availableChars <= 0) {
+                enforceMaxCharacters();
+                // Recalculate after removing entries
+                const newCurrentChars = getTotalCharacterCount();
+                const newAvailableChars = MAX_SUBTITLE_CHARACTERS - newCurrentChars;
+                
+                // If still no space after removing entries, truncate from beginning (whole words)
+                if (newAvailableChars > 0) {
+                    text = truncateFromBeginning(text, newAvailableChars);
+                } else {
+                    text = '';
+                }
+            } else {
+                // Truncate from beginning if text is too long (remove whole words from start)
+                text = truncateFromBeginning(text, availableChars);
+            }
+            
+            if (!text || text.trim().length === 0) {
+                // No space for text, skip adding
+                checkAndHideTranscriptIfEmpty();
+                return;
+            }
+            
+            // Maintain maximum of 2 lines before adding partial transcript
+            maintainMaxTwoLines();
+            
             // Add new partial transcript
             const entry = document.createElement('div');
             entry.className = 'transcript-entry transcript-entry-partial';
-            entry.innerHTML = `<span class="transcript-speaker">🎤 Speaking:</span><span class="transcript-text" style="opacity: 0.7; font-style: italic;">${text}</span>`;
+            entry.innerHTML = `<span class="transcript-text" style="opacity: 0.7; font-style: italic;">${text}</span>`;
             transcriptDiv.appendChild(entry);
+            
+            // Safety check: ensure we never have more than 2 lines (enforce limit after adding)
+            const allEntriesAfter = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            while (allEntriesAfter.length > 2) {
+                const oldest = allEntriesAfter[0];
+                // Clear timeouts
+                const words = oldest.querySelectorAll('.transcript-word');
+                words.forEach(wordSpan => {
+                    const timeoutId = wordTimeouts.get(wordSpan);
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                        wordTimeouts.delete(wordSpan);
+                    }
+                });
+                if (oldest === currentPartialTranscript) {
+                    currentPartialTranscript = null;
+                }
+                oldest.remove();
+                allEntriesAfter.shift();
+            }
+            
+            // Final enforcement: ensure character limit is never exceeded
+            enforceMaxCharacters();
+            
+            // Make sure transcript is visible when adding content (only if not manually hidden)
+            if (!transcriptDiv.classList.contains('hidden')) {
+                transcriptDiv.classList.remove('empty');
+            }
             
             // Auto-scroll to bottom
             transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
@@ -1471,6 +1543,145 @@
             if (currentPartialTranscript) {
                 currentPartialTranscript.remove();
                 currentPartialTranscript = null;
+                checkAndHideTranscriptIfEmpty();
+            }
+        }
+
+        // Get total character count of all transcript entries
+        function getTotalCharacterCount() {
+            if (!transcriptDiv) return 0;
+            const allEntries = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            let totalChars = 0;
+            allEntries.forEach(entry => {
+                const text = entry.textContent || entry.innerText || '';
+                totalChars += text.trim().length;
+            });
+            return totalChars;
+        }
+
+        // Truncate text from the beginning (removing whole words) to fit within maxChars
+        // This keeps the latest text readable by removing older words from the start
+        function truncateFromBeginning(text, maxChars) {
+            if (!text || text.length <= maxChars) {
+                return text;
+            }
+            
+            // Split into words
+            const words = text.trim().split(/\s+/);
+            let result = '';
+            let resultLength = 0;
+            
+            // Start from the end and add words until we reach maxChars
+            for (let i = words.length - 1; i >= 0; i--) {
+                const word = words[i];
+                const wordWithSpace = result ? ' ' + word : word;
+                
+                // If adding this word would exceed the limit, stop
+                if (resultLength + wordWithSpace.length > maxChars) {
+                    break;
+                }
+                
+                // Add word to the beginning of result (but keep words in order)
+                result = word + (result ? ' ' + result : '');
+                resultLength += wordWithSpace.length;
+            }
+            
+            return result.trim();
+        }
+
+        // Ensure total characters never exceed MAX_SUBTITLE_CHARACTERS
+        function enforceMaxCharacters() {
+            if (!transcriptDiv) return;
+            
+            const allEntries = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            let totalChars = getTotalCharacterCount();
+            
+            // Remove oldest entries until we're under the limit
+            while (totalChars > MAX_SUBTITLE_CHARACTERS && allEntries.length > 0) {
+                const oldestEntry = allEntries[0];
+                
+                // Clear all timeouts for words in this entry
+                const words = oldestEntry.querySelectorAll('.transcript-word');
+                words.forEach(wordSpan => {
+                    const timeoutId = wordTimeouts.get(wordSpan);
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                        wordTimeouts.delete(wordSpan);
+                    }
+                });
+                
+                // If this is the current partial transcript, clear the reference
+                if (oldestEntry === currentPartialTranscript) {
+                    currentPartialTranscript = null;
+                }
+                
+                // Remove the oldest entry
+                oldestEntry.remove();
+                allEntries.shift();
+                
+                // Recalculate total
+                totalChars = getTotalCharacterCount();
+            }
+        }
+
+        // Maintain maximum of 2 transcript lines total (including partial)
+        function maintainMaxTwoLines() {
+            if (!transcriptDiv) return;
+            
+            // Get ALL transcript entries (both final and partial)
+            const allEntries = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            
+            // If we have 2 or more entries, remove the oldest ones until only 1 remains
+            // (so when we add the new one, we'll have exactly 2)
+            while (allEntries.length >= 2) {
+                const oldestEntry = allEntries[0]; // Get the first (oldest) entry
+                
+                // Clear all timeouts for words in this entry
+                const words = oldestEntry.querySelectorAll('.transcript-word');
+                words.forEach(wordSpan => {
+                    const timeoutId = wordTimeouts.get(wordSpan);
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                        wordTimeouts.delete(wordSpan);
+                    }
+                });
+                
+                // If this is the current partial transcript, clear the reference
+                if (oldestEntry === currentPartialTranscript) {
+                    currentPartialTranscript = null;
+                }
+                
+                // Remove the oldest entry
+                oldestEntry.remove();
+                
+                // Update the array for the next iteration
+                allEntries.shift();
+            }
+        }
+
+        // Check if transcript is empty and hide the container
+        function checkAndHideTranscriptIfEmpty() {
+            if (!transcriptDiv) return;
+            
+            // Check if transcript div is manually hidden
+            if (transcriptDiv.classList.contains('hidden')) {
+                return; // Don't override manual hidden state
+            }
+            
+            // Check if there are any visible entries
+            const entries = transcriptDiv.querySelectorAll('.transcript-entry');
+            const hasVisibleContent = Array.from(entries).some(entry => {
+                // Check if entry has any visible text
+                const textContent = entry.textContent.trim();
+                return textContent.length > 0;
+            });
+            
+            if (!hasVisibleContent) {
+                // Hide the transcript box when empty
+                transcriptDiv.classList.add('empty');
+            } else {
+                // Show the transcript box when there's content
+                transcriptDiv.classList.remove('empty');
             }
         }
         
@@ -1479,16 +1690,41 @@
             // Clear partial transcript when adding final entry
             clearPartialTranscript();
             
+            // Truncate text to fit within character limit (from beginning, whole words only)
+            const currentChars = getTotalCharacterCount();
+            const availableChars = MAX_SUBTITLE_CHARACTERS - currentChars;
+            
+            // If no space available, remove oldest entries first
+            if (availableChars <= 0) {
+                enforceMaxCharacters();
+                // Recalculate after removing entries
+                const newCurrentChars = getTotalCharacterCount();
+                const newAvailableChars = MAX_SUBTITLE_CHARACTERS - newCurrentChars;
+                
+                // If still no space after removing entries, truncate from beginning (whole words)
+                if (newAvailableChars > 0) {
+                    text = truncateFromBeginning(text, newAvailableChars);
+                } else {
+                    text = '';
+                }
+            } else {
+                // Truncate from beginning if text is too long (remove whole words from start)
+                text = truncateFromBeginning(text, availableChars);
+            }
+            
+            if (!text || text.trim().length === 0) {
+                // No space for text, skip adding
+                checkAndHideTranscriptIfEmpty();
+                return;
+            }
+            
+            // Maintain maximum of 2 lines before adding new entry
+            maintainMaxTwoLines();
+            
             const entry = document.createElement('div');
             entry.className = 'transcript-entry';
             
-            // Create speaker label
-            const speakerSpan = document.createElement('span');
-            speakerSpan.className = 'transcript-speaker';
-            speakerSpan.textContent = `🎤 ${speaker}: `;
-            entry.appendChild(speakerSpan);
-            
-            // Create text container
+            // Create text container (speaker removed)
             const textContainer = document.createElement('span');
             textContainer.className = 'transcript-text';
             
@@ -1537,18 +1773,21 @@
                     // Add fading class to trigger CSS transition
                     wordSpan.classList.add('fading');
                     
-                    // Remove word from DOM after fade animation completes
-                    setTimeout(() => {
-                        if (wordSpan && wordSpan.parentNode && wordSpan.dataset.createdAt == wordCreatedAt) {
-                            wordSpan.remove();
-                            
-                            // Check if text container is now empty, remove entry if so
-                            if (textContainer.children.length === 0 && entry.parentNode) {
-                                entry.remove();
+                        // Remove word from DOM after fade animation completes
+                        setTimeout(() => {
+                            if (wordSpan && wordSpan.parentNode && wordSpan.dataset.createdAt == wordCreatedAt) {
+                                wordSpan.remove();
+                                
+                                // Check if text container is now empty, remove entry if so
+                                if (textContainer.children.length === 0 && entry.parentNode) {
+                                    entry.remove();
+                                }
+                                
+                                // Check if transcript container is now empty, hide it
+                                checkAndHideTranscriptIfEmpty();
                             }
-                        }
-                        wordTimeouts.delete(wordSpan);
-                    }, 500); // Match CSS transition duration
+                            wordTimeouts.delete(wordSpan);
+                        }, 500); // Match CSS transition duration
                 }, CAPTION_DISPLAY_DURATION);
                 
                 // Store timeout reference for this word
@@ -1557,6 +1796,34 @@
             
             entry.appendChild(textContainer);
             transcriptDiv.appendChild(entry);
+            
+            // Safety check: ensure we never have more than 2 lines (enforce limit after adding)
+            const allEntriesAfter = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            while (allEntriesAfter.length > 2) {
+                const oldest = allEntriesAfter[0];
+                // Clear timeouts
+                const words = oldest.querySelectorAll('.transcript-word');
+                words.forEach(wordSpan => {
+                    const timeoutId = wordTimeouts.get(wordSpan);
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                        wordTimeouts.delete(wordSpan);
+                    }
+                });
+                if (oldest === currentPartialTranscript) {
+                    currentPartialTranscript = null;
+                }
+                oldest.remove();
+                allEntriesAfter.shift();
+            }
+            
+            // Final enforcement: ensure character limit is never exceeded
+            enforceMaxCharacters();
+            
+            // Make sure transcript is visible when adding content (only if not manually hidden)
+            if (!transcriptDiv.classList.contains('hidden')) {
+                transcriptDiv.classList.remove('empty');
+            }
             
             // Auto-scroll to bottom
             transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
@@ -1604,6 +1871,11 @@
                     clearTimeout(timeoutId);
                 });
                 wordTimeouts.clear();
+                
+                // Clear transcript content and hide the box
+                transcriptDiv.innerHTML = '';
+                transcriptDiv.classList.add('empty');
+                currentPartialTranscript = null;
                 
             } catch (error) {
                 console.error('❌ Error stopping meeting:', error);
