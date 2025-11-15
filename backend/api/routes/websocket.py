@@ -106,11 +106,12 @@ async def audio_streaming_endpoint(
         # Callback for committed transcripts (final results)
         async def on_committed_transcript(data: dict):
             """Handle committed transcript from realtime API"""
+            print(f"[WebSocket] 📥 on_committed_transcript called with data type: {type(data)}, keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}", flush=True)
             try:
                 # Handle errors
                 if data.get("type") == "error":
                     error_msg = data.get("error", "Unknown error")
-                    print(f"[WebSocket] ❌ Realtime API error: {error_msg}")
+                    print(f"[WebSocket] ❌ Realtime API error: {error_msg}", flush=True)
                     try:
                         await websocket.send_json({
                             "type": "transcription_error",
@@ -121,10 +122,22 @@ async def audio_streaming_endpoint(
                     # Don't fall back immediately - let it try to reconnect
                     return
                 
-                text = data.get("text", "")
-                words = data.get("words", [])
+                # Handle different data formats
+                if isinstance(data, str):
+                    text = data
+                    words = []
+                elif isinstance(data, dict):
+                    text = data.get("text", "")
+                    words = data.get("words", [])
+                else:
+                    # Try to get text from the object
+                    text = getattr(data, "text", str(data))
+                    words = getattr(data, "words", [])
                 
-                if not text:
+                print(f"[WebSocket] 🔍 Extracted text from committed transcript: '{text[:100]}...' (length: {len(text)})", flush=True)
+                
+                if not text or not text.strip():
+                    print(f"[WebSocket] ⚠️  Empty text in committed transcript, skipping", flush=True)
                     return
                 
                 meeting = get_meeting_from_db_or_memory(meeting_id)

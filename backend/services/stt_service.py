@@ -589,13 +589,16 @@ class STTService:
                 
                 # Connect to realtime API using RealtimeAudioOptions
                 # This matches the documentation: await elevenlabs.speech_to_text.realtime.connect(RealtimeAudioOptions(...))
+                print(f"[STT] 🔌 Attempting to connect to realtime API...", flush=True)
                 connection = await self.client.speech_to_text.realtime.connect(audio_options)
+                print(f"[STT] 🔌 Connection object created: {type(connection)}, has 'on' method: {hasattr(connection, 'on')}, has 'send' method: {hasattr(connection, 'send')}", flush=True)
                 
                 # Set up event handlers
                 # Note: connection.on() takes (event, callback) - not a decorator
                 # The library expects synchronous callbacks, so we wrap async handlers
                 def on_session_started(data):
-                    print(f"[STT] ✅ Realtime session started for meeting {meeting_id}")
+                    print(f"[STT] ✅ Realtime session started for meeting {meeting_id}", flush=True)
+                    print(f"[STT] 📋 Session started data: {data}", flush=True)
                 
                 async def _on_partial_async(data):
                     try:
@@ -633,21 +636,34 @@ class STTService:
                     asyncio.create_task(_on_partial_async(data))
                 
                 async def _on_committed_async(data):
+                    print(f"[STT] 📥 _on_committed_async called with data type: {type(data)}, content: {str(data)[:200]}", flush=True)
                     # Check for speaker information in committed transcript
                     if isinstance(data, dict):
                         speaker = data.get("speaker", data.get("speaker_id", None))
                         text = data.get("text", "")
                         if speaker:
-                            print(f"[STT] [Diarization] 🎤 Committed transcript with speaker: {speaker}")
+                            print(f"[STT] [Diarization] 🎤 Committed transcript with speaker: {speaker}", flush=True)
                     else:
                         text = str(data)
                         speaker = None
                     
-                    if text and on_committed_transcript:
+                    print(f"[STT] 🔍 Extracted text: '{text[:100]}...' (length: {len(text)})", flush=True)
+                    
+                    if not text:
+                        print(f"[STT] ⚠️  No text in committed transcript, skipping", flush=True)
+                        return
+                    
+                    if on_committed_transcript:
                         # Clean text before sending
+                        original_text = text
                         if self.enable_text_cleaning:
                             text = self._clean_text(text)
-                        if self._is_valid_transcription(text):
+                            print(f"[STT] 🧹 Cleaned text: '{text[:100]}...' (original: '{original_text[:100]}...')", flush=True)
+                        
+                        is_valid = self._is_valid_transcription(text)
+                        print(f"[STT] ✅ Text validation result: {is_valid}", flush=True)
+                        
+                        if is_valid:
                             transcript_data = {
                                 "type": "committed",
                                 "text": text,
@@ -656,30 +672,48 @@ class STTService:
                             # Include speaker if available
                             if speaker is not None:
                                 transcript_data["speaker"] = speaker
+                            print(f"[STT] 📤 Calling on_committed_transcript callback with: {transcript_data}", flush=True)
                             await on_committed_transcript(transcript_data)
+                        else:
+                            print(f"[STT] ⚠️  Text failed validation, not calling callback", flush=True)
+                    else:
+                        print(f"[STT] ⚠️  on_committed_transcript callback is None", flush=True)
                 
                 def on_committed(data):
                     # Wrap async handler in a task to avoid RuntimeWarning
                     asyncio.create_task(_on_committed_async(data))
                 
                 async def _on_committed_with_timestamps_async(data):
+                    print(f"[STT] 📥 _on_committed_with_timestamps_async called with data type: {type(data)}", flush=True)
                     # Check for speaker information in committed transcript with timestamps
                     if isinstance(data, dict):
                         speaker = data.get("speaker", data.get("speaker_id", None))
                         text = data.get("text", "")
                         words = data.get("words", [])
                         if speaker:
-                            print(f"[STT] [Diarization] 🎤 Committed transcript with timestamps and speaker: {speaker}")
+                            print(f"[STT] [Diarization] 🎤 Committed transcript with timestamps and speaker: {speaker}", flush=True)
                     else:
                         text = str(data)
                         words = []
                         speaker = None
                     
-                    if text and on_committed_transcript:
+                    print(f"[STT] 🔍 Extracted text with timestamps: '{text[:100]}...' (length: {len(text)}, words: {len(words)})", flush=True)
+                    
+                    if not text:
+                        print(f"[STT] ⚠️  No text in committed transcript with timestamps, skipping", flush=True)
+                        return
+                    
+                    if on_committed_transcript:
                         # Clean text before sending
+                        original_text = text
                         if self.enable_text_cleaning:
                             text = self._clean_text(text)
-                        if self._is_valid_transcription(text):
+                            print(f"[STT] 🧹 Cleaned text: '{text[:100]}...'", flush=True)
+                        
+                        is_valid = self._is_valid_transcription(text)
+                        print(f"[STT] ✅ Text validation result: {is_valid}", flush=True)
+                        
+                        if is_valid:
                             transcript_data = {
                                 "type": "committed",
                                 "text": text,
@@ -689,7 +723,12 @@ class STTService:
                             # Include speaker if available
                             if speaker is not None:
                                 transcript_data["speaker"] = speaker
+                            print(f"[STT] 📤 Calling on_committed_transcript callback with timestamps", flush=True)
                             await on_committed_transcript(transcript_data)
+                        else:
+                            print(f"[STT] ⚠️  Text failed validation, not calling callback", flush=True)
+                    else:
+                        print(f"[STT] ⚠️  on_committed_transcript callback is None", flush=True)
                 
                 def on_committed_with_timestamps(data):
                     # Wrap async handler in a task to avoid RuntimeWarning
@@ -753,13 +792,21 @@ class STTService:
                     asyncio.create_task(cleanup())
                 
                 # Register event handlers (connection.on() takes event and callback)
+                print(f"[STT] 📝 Registering event handlers for meeting {meeting_id}", flush=True)
                 connection.on(RealtimeEvents.SESSION_STARTED, on_session_started)
+                print(f"[STT] ✅ Registered SESSION_STARTED handler", flush=True)
                 connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, on_partial)
+                print(f"[STT] ✅ Registered PARTIAL_TRANSCRIPT handler", flush=True)
                 connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT, on_committed)
+                print(f"[STT] ✅ Registered COMMITTED_TRANSCRIPT handler", flush=True)
                 connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT_WITH_TIMESTAMPS, on_committed_with_timestamps)
+                print(f"[STT] ✅ Registered COMMITTED_TRANSCRIPT_WITH_TIMESTAMPS handler", flush=True)
                 connection.on(RealtimeEvents.ERROR, on_error)
+                print(f"[STT] ✅ Registered ERROR handler", flush=True)
                 connection.on(RealtimeEvents.AUTH_ERROR, on_auth_error)
+                print(f"[STT] ✅ Registered AUTH_ERROR handler", flush=True)
                 connection.on(RealtimeEvents.CLOSE, on_close)
+                print(f"[STT] ✅ Registered CLOSE handler", flush=True)
                 
                 # Store connection
                 self.realtime_connections[meeting_id] = {
@@ -815,10 +862,18 @@ class STTService:
                 
                 # Send audio chunk with error handling
                 try:
-                    await connection.send({
+                    send_data = {
                         "audio_base_64": audio_base64,
                         "sample_rate": self.SAMPLE_RATE,
-                    })
+                    }
+                    await connection.send(send_data)
+                    # Log occasionally to avoid spam (every 50 chunks or so)
+                    if hasattr(self, '_send_count'):
+                        self._send_count += 1
+                    else:
+                        self._send_count = 1
+                    if self._send_count % 50 == 0:
+                        print(f"[STT] 📤 Sent {self._send_count} audio chunks to realtime API for meeting {meeting_id}", flush=True)
                     return True
                 except AttributeError as e:
                     # Connection object doesn't have send method or is closed

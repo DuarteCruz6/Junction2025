@@ -34,13 +34,52 @@ async def add_task(meeting_id: str, task: dict):
         raise HTTPException(status_code=404, detail="Meeting not found")
     
     task_id = str(uuid.uuid4())
+    title = task.get("title", "Untitled Task")
+    description = task.get("description", "")
+    assignee = task.get("assignee")
+    due_date_str = task.get("due_date")
+    priority = task.get("priority", "medium")
+    
+    # Parse due_date if provided
+    due_date = None
+    if due_date_str:
+        try:
+            from dateutil import parser
+            due_date = parser.parse(due_date_str)
+        except Exception:
+            pass
+    
+    # Save to Task table
+    if SessionLocal:
+        try:
+            db = SessionLocal()
+            db_task = Task(
+                id=task_id,
+                meeting_id=meeting_id,
+                title=title,
+                description=description,
+                assignee=assignee,
+                due_date=due_date,
+                is_concluded=False,
+                priority=priority,
+            )
+            db.add(db_task)
+            db.commit()
+            db.close()
+        except Exception as e:
+            print(f"[Tasks API] ❌ Error saving task to database: {e}")
+            if 'db' in locals():
+                db.rollback()
+                db.close()
+    
     task_data = {
         "task_id": task_id,
-        "description": task.get("description", ""),
-        "assignee": task.get("assignee"),
-        "due_date": task.get("due_date"),
-        "status": "pending",
-        "priority": task.get("priority", "medium"),
+        "title": title,
+        "description": description,
+        "assignee": assignee,
+        "due_date": due_date_str,
+        "is_concluded": False,
+        "priority": priority,
         "created_at": datetime.now().isoformat(),
     }
     
@@ -64,17 +103,18 @@ async def get_incomplete_tasks():
     try:
         if SessionLocal:
             db = SessionLocal()
-            # Get all tasks where status is not 'completed'
-            tasks = db.query(Task).filter(Task.status != "completed").all()
+            # Get all tasks where is_concluded is False
+            tasks = db.query(Task).filter(Task.is_concluded == False).all()
             result = []
             for task in tasks:
                 result.append({
                     "task_id": task.id,
                     "meeting_id": task.meeting_id,
+                    "title": task.title,
                     "description": task.description,
                     "assignee": task.assignee,
                     "due_date": task.due_date.isoformat() if task.due_date else None,
-                    "status": task.status,
+                    "is_concluded": task.is_concluded,
                     "priority": task.priority,
                     "created_at": task.created_at.isoformat() if task.created_at else None,
                 })
@@ -87,7 +127,7 @@ async def get_incomplete_tasks():
             for meeting in meetings:
                 tasks = meeting.get("tasks", [])
                 for task in tasks:
-                    if task.get("status") != "completed":
+                    if not task.get("is_concluded", False):
                         all_tasks.append(task)
             return JSONResponse(content={"tasks": all_tasks})
     except Exception as e:
@@ -96,17 +136,23 @@ async def get_incomplete_tasks():
 
 @router.patch("/api/tasks/{task_id}/status")
 async def update_task_status(task_id: str, status: dict):
-    """Update task status (e.g., mark as completed)"""
-    new_status = status.get("status")
-    if not new_status:
-        raise HTTPException(status_code=400, detail="Status is required")
+    """Update task is_concluded status (e.g., mark as completed)"""
+    # Support both old "status" field and new "is_concluded" field for backward compatibility
+    is_concluded = status.get("is_concluded")
+    if is_concluded is None:
+        # Try to convert old "status" field to is_concluded
+        old_status = status.get("status")
+        if old_status:
+            is_concluded = old_status.lower() in ["completed", "done", "finished"]
+        else:
+            raise HTTPException(status_code=400, detail="is_concluded or status is required")
     
     try:
         if SessionLocal:
             db = SessionLocal()
             task = db.query(Task).filter(Task.id == task_id).first()
             if task:
-                task.status = new_status
+                task.is_concluded = bool(is_concluded)
                 task.updated_at = datetime.utcnow()
                 db.commit()
                 db.close()
@@ -116,10 +162,10 @@ async def update_task_status(task_id: str, status: dict):
                 if meeting:
                     for t in meeting.get("tasks", []):
                         if t.get("task_id") == task_id:
-                            t["status"] = new_status
+                            t["is_concluded"] = bool(is_concluded)
                     save_meeting_to_db(meeting)
                 
-                return JSONResponse(content={"task_id": task_id, "status": new_status})
+                return JSONResponse(content={"task_id": task_id, "is_concluded": bool(is_concluded)})
             else:
                 db.close()
                 raise HTTPException(status_code=404, detail="Task not found")
@@ -130,9 +176,9 @@ async def update_task_status(task_id: str, status: dict):
                 tasks = meeting.get("tasks", [])
                 for task in tasks:
                     if task.get("task_id") == task_id:
-                        task["status"] = new_status
+                        task["is_concluded"] = bool(is_concluded)
                         save_meeting_to_db(meeting)
-                        return JSONResponse(content={"task_id": task_id, "status": new_status})
+                        return JSONResponse(content={"task_id": task_id, "is_concluded": bool(is_concluded)})
             raise HTTPException(status_code=404, detail="Task not found")
     except HTTPException:
         raise

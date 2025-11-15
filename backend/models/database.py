@@ -71,10 +71,11 @@ class Task(Base):
     
     id = Column(String, primary_key=True)
     meeting_id = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False)  # Task title
     description = Column(Text, nullable=False)
     assignee = Column(String, nullable=True)
     due_date = Column(DateTime, nullable=True)
-    status = Column(String, default="pending")  # pending, in_progress, completed
+    is_concluded = Column(Boolean, default=False)  # Whether the task is completed
     priority = Column(String, default="medium")  # high, medium, low
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

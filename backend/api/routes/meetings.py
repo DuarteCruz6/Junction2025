@@ -36,6 +36,7 @@ async def start_meeting():
     audio_streams[meeting_id] = []
     
     # Start background tasks
+    print(f"[Meetings API] 🚀 Starting background tasks for meeting {meeting_id}", flush=True)
     summary_task = asyncio.create_task(process_summary_update(meeting_id))
     task_extraction_task = asyncio.create_task(process_task_extraction(meeting_id))
     batch_diarization_task = asyncio.create_task(process_batch_diarization(meeting_id))
@@ -44,6 +45,7 @@ async def start_meeting():
         "task_extraction": task_extraction_task,
         "batch_diarization": batch_diarization_task,
     }
+    print(f"[Meetings API] ✅ Background tasks started for meeting {meeting_id}", flush=True)
     
     # Broadcast meeting started
     await websocket_manager.send_status_update(
