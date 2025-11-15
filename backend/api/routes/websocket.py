@@ -53,9 +53,7 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str):
 @router.websocket("/ws/audio/{meeting_id}")
 async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
     """WebSocket endpoint for streaming audio chunks and receiving transcriptions"""
-    print(f"[WebSocket] 🔌 Audio streaming endpoint called for meeting {meeting_id}")
     await websocket.accept()
-    print(f"[WebSocket] ✅ WebSocket accepted for meeting {meeting_id}")
     
     # Verify meeting exists
     meeting = get_meeting_from_db_or_memory(meeting_id)
@@ -63,8 +61,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
         print(f"[WebSocket] ❌ Meeting {meeting_id} not found, closing connection")
         await websocket.close(code=1008, reason="Meeting not found")
         return
-    
-    print(f"[WebSocket] ✅ Meeting {meeting_id} found, starting audio streaming")
     
     # Try to connect to realtime API if enabled
     use_realtime = stt_service.use_realtime
@@ -115,6 +111,14 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                 if not meeting:
                     return
                 
+                # Check for duplicates: if the last transcript entry has the same text, skip it
+                transcript = meeting.get("transcript", [])
+                if transcript:
+                    last_entry = transcript[-1]
+                    if last_entry.get("text") == text and last_entry.get("speaker") == "Unknown":
+                        # Duplicate detected, skip
+                        return
+                
                 # Calculate timing from words if available
                 start_time = 0.0
                 end_time = 0.0
@@ -130,10 +134,13 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                     "timestamp": datetime.now().isoformat(),
                 }
                 
-                print(f"📝 Unknown: {text}")
+                print(f"📝 Unknown: {text}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 save_meeting_to_db(meeting)
+                
+                # Mark that a committed transcript was received (for detecting natural pauses in batch processing)
+                stt_service.mark_committed_transcript(meeting_id)
                 
                 # Broadcast to all WebSocket connections
                 try:
@@ -164,10 +171,7 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
             language=None  # Auto-detect
         )
         
-        if realtime_connected:
-            print(f"[WebSocket] ✅ Connected to ElevenLabs realtime API for meeting {meeting_id}")
-        else:
-            print(f"[WebSocket] ⚠️  Failed to connect to realtime API, falling back to batch API")
+        if not realtime_connected:
             use_realtime = False
     
     # Callback function to send transcript updates (for batch API fallback)
@@ -232,7 +236,7 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                 # Show transcription (clean output)
                 speaker = segment.get("speaker", "Unknown")
                 text = segment.get("text", "")
-                print(f"📝 {speaker}: {text}")
+                print(f"📝 {speaker}: {text}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 new_segments.append(transcript_entry)
@@ -281,7 +285,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
     
     try:
         # Send connection confirmation
-        print(f"[WebSocket] 📤 Sending connection confirmation to meeting {meeting_id}")
         await websocket.send_json({
             "type": "connected",
             "data": {
@@ -290,15 +293,12 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                 "message": "Audio streaming ready"
             }
         })
-        print(f"[WebSocket] ✅ Connection confirmation sent")
-        print(f"[WebSocket] 🔄 Entering message receive loop for meeting {meeting_id}")
         
         while True:
             try:
                 # Receive audio data (can be text with base64 or binary)
                 try:
                     message = await websocket.receive()
-                    print(f"[WebSocket] 📨 Message received! Keys: {list(message.keys())}")
                 except RuntimeError as e:
                     # WebSocket disconnected
                     if "disconnect" in str(e).lower() or "receive" in str(e).lower():
@@ -312,7 +312,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                 if "bytes" in message:
                     # Binary audio data (PCM)
                     audio_chunk = message["bytes"]
-                    print(f"[WebSocket] 📥 Received audio chunk: {len(audio_chunk)} bytes (PCM)", flush=True)
                     is_final = False
                 elif "text" in message:
                     # JSON message with audio data or control
@@ -335,16 +334,14 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                     except json.JSONDecodeError:
                         continue
                 else:
-                    print(f"[WebSocket] Unknown message format: {list(message.keys())}")
                     continue
                 
-                # Process audio chunk if we have data
-                if audio_chunk is not None:
-                    print(f"[WebSocket] ✅ Audio chunk ready for processing: {len(audio_chunk)} bytes")
-                else:
-                    print(f"[WebSocket] ⚠️  No audio chunk in message, skipping...")
-                
                 if audio_chunk:
+                    print(f"[WebSocket] 📥 Received audio chunk: {len(audio_chunk)} bytes", flush=True)
+                    # Add to batch processing buffer (for periodic diarization)
+                    # This runs in parallel with realtime transcription
+                    await stt_service.add_audio_to_batch_buffer(audio_chunk, meeting_id)
+                    
                     # Use realtime API if connected, otherwise use batch API
                     if use_realtime and realtime_connected:
                         # Send directly to realtime API (no buffering needed)
@@ -352,11 +349,14 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                             meeting_id=meeting_id,
                             audio_chunk=audio_chunk
                         )
+                        if success:
+                            print(f"[WebSocket] ✅ Sent {len(audio_chunk)} bytes to realtime API", flush=True)
+                        else:
+                            print(f"[WebSocket] ⚠️  Failed to send to realtime API", flush=True)
                         
                         if not success:
                             # Realtime API failed, try to reconnect once
                             if realtime_connected:
-                                print(f"[WebSocket] ⚠️  Realtime API send failed, attempting reconnection...")
                                 # Disconnect and try to reconnect
                                 await stt_service.disconnect_realtime(meeting_id)
                                 realtime_connected = await stt_service.connect_realtime(
@@ -367,7 +367,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                                 )
                                 
                                 if realtime_connected:
-                                    print(f"[WebSocket] ✅ Reconnected to realtime API")
                                     # Try sending again
                                     success = await stt_service.send_audio_to_realtime(
                                         meeting_id=meeting_id,
@@ -376,7 +375,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                             
                             if not success:
                                 # Reconnection failed, fall back to batch API
-                                print(f"[WebSocket] ⚠️  Realtime API unavailable, falling back to batch API")
                                 use_realtime = False
                                 realtime_connected = False
                                 # Continue to batch API processing below
@@ -406,13 +404,9 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                             continue
                     
                     # Batch API processing (fallback or if realtime disabled)
-                    # print(f"[WebSocket] Processing audio chunk: {len(audio_chunk)} bytes", flush=True)  # DEBUG
-                    # Update STT service to use callback
                     async with stt_service.buffer_lock:
                         # Add chunk to buffer
                         stt_service.streaming_buffers[meeting_id].append(audio_chunk)
-                        buffer_chunk_count = len(stt_service.streaming_buffers[meeting_id])
-                        print(f"[WebSocket] 📦 Added chunk to buffer (total chunks: {buffer_chunk_count})")
                         
                         # Calculate buffer duration
                         total_pcm = b''.join(stt_service.streaming_buffers[meeting_id])
@@ -421,7 +415,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                             stt_service.SAMPLE_RATE,
                             stt_service.SAMPLE_WIDTH
                         )
-                        print(f"[WebSocket] ⏱️  Buffer duration: {buffer_duration:.2f}s (min: {stt_service.MIN_BUFFER_DURATION}s, max: {stt_service.MAX_BUFFER_DURATION}s)")
                         
                         # Check if we should process
                         should_process = (
@@ -429,26 +422,20 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                             buffer_duration >= stt_service.MAX_BUFFER_DURATION or
                             buffer_duration >= stt_service.MIN_BUFFER_DURATION
                         )
-                        print(f"[WebSocket] 🔍 Should process: {should_process} (is_final={is_final}, duration_check={buffer_duration >= stt_service.MIN_BUFFER_DURATION})")
                         
                         if should_process and len(stt_service.streaming_buffers[meeting_id]) > 0:
-                            print(f"[WebSocket] 🔄 Processing buffer: {len(stt_service.streaming_buffers[meeting_id])} chunks ({buffer_duration:.2f}s)")
                             # Get buffer and clear it
                             buffer_pcm = b''.join(stt_service.streaming_buffers[meeting_id])
-                            print(f"[WebSocket] 📦 Buffer PCM size: {len(buffer_pcm)} bytes")
                             stt_service.streaming_buffers[meeting_id].clear()
                             
                             # Convert to WAV
-                            print(f"[WebSocket] 🔄 Converting PCM to WAV...")
                             wav_data = stt_service._pcm_to_wav(
                                 buffer_pcm,
                                 stt_service.SAMPLE_RATE,
                                 stt_service.CHANNELS,
                                 stt_service.SAMPLE_WIDTH
                             )
-                            print(f"[WebSocket] ✅ WAV conversion complete: {len(wav_data)} bytes")
                             
-                            print(f"[WebSocket] 📤 Sending to STT service for transcription...")
                             # Process with callback
                             import asyncio
                             asyncio.create_task(
@@ -459,7 +446,6 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                                     send_transcript_callback
                                 )
                             )
-                            print(f"[WebSocket] ✅ STT processing task created")
                             
                             # Send acknowledgment (with error handling)
                             try:
@@ -519,8 +505,9 @@ async def audio_streaming_endpoint(websocket: WebSocket, meeting_id: str):
                 await stt_service.disconnect_realtime(meeting_id)
         except Exception as e:
             print(f"[WebSocket] Error disconnecting realtime API: {e}")
-        # Clear buffer on disconnect
+        # Clear buffers on disconnect
         stt_service.clear_buffer(meeting_id)
+        stt_service.clear_batch_buffer(meeting_id)
         # Only close if still connected
         try:
             if hasattr(websocket, 'client_state'):

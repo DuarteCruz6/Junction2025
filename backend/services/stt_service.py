@@ -33,9 +33,17 @@ class STTService:
         self.known_speakers: Dict[str, str] = {}  # speaker_name -> audio_file_path
         self.speaker_references: Dict[str, str] = {}  # speaker_name -> data_url
         
-        # Streaming buffers: meeting_id -> list of audio chunks
+        # Streaming buffers: meeting_id -> list of audio chunks (for batch API fallback)
         self.streaming_buffers: Dict[str, List[bytes]] = defaultdict(list)
         self.buffer_lock = asyncio.Lock()
+        
+        # Batch processing buffers: meeting_id -> list of audio chunks (for periodic diarization)
+        self.batch_processing_buffers: Dict[str, List[bytes]] = defaultdict(list)
+        self.batch_buffer_lock = asyncio.Lock()
+        
+        # Track last processing time for each meeting (to avoid cutting mid-phrase)
+        self.last_batch_process_time: Dict[str, float] = {}
+        self.last_committed_time: Dict[str, float] = {}  # Track when last committed transcript was received
         
         # Buffer configuration - optimized for better accuracy
         # Longer buffers provide more context for better transcription quality
@@ -44,6 +52,12 @@ class STTService:
         self.SAMPLE_RATE = 16000         # 16kHz sample rate
         self.CHANNELS = 1                # Mono audio
         self.SAMPLE_WIDTH = 2            # 16-bit (2 bytes per sample)
+        
+        # Batch processing configuration
+        self.BATCH_PROCESS_INTERVAL = 60.0  # Process every 60 seconds (not used anymore, kept for compatibility)
+        self.MIN_SILENCE_FOR_CUT = 1.0  # Wait for 1 second of silence before cutting (avoid mid-phrase)
+        self.MIN_AUDIO_FOR_DIARIZATION = 1.0  # Minimum 1 second of audio to process (allows processing after each phrase, even short ones)
+        self.MAX_AUDIO_BEFORE_FORCE = 30.0  # Force process if we have 30 seconds of audio (prevents buffer overflow)
         
         # Language configuration (can be set per meeting)
         self.default_language = os.getenv("STT_LANGUAGE", None)  # e.g., "en", "pt", "es"
@@ -112,18 +126,10 @@ class STTService:
                 
                 audio_size_mb = len(audio_file_data) / (1024 * 1024)
                 audio_duration = len(audio_file_data) / (self.SAMPLE_RATE * self.SAMPLE_WIDTH * self.CHANNELS)
-                print(f"[STT] 📤 Sending audio to ElevenLabs API:")
-                print(f"      - Format: {audio_format}")
-                print(f"      - Size: {len(audio_file_data)} bytes ({audio_size_mb:.3f} MB)")
-                print(f"      - Estimated duration: {audio_duration:.2f}s")
-                print(f"      - Model: scribe_v1")
-                print(f"      - Diarization: enabled")
-                
                 # ElevenLabs speech_to_text.convert with diarization (run in executor)
                 def transcribe():
                     # Create BytesIO inside executor to avoid file handle issues
                     audio_bytes = io.BytesIO(audio_file_data)
-                    print(f"[STT] 📡 Calling ElevenLabs API...")
                     
                     # Build transcription parameters
                     transcribe_params = {
@@ -139,7 +145,6 @@ class STTService:
                         transcribe_params["language"] = self.default_language
                     
                     result = self.client.speech_to_text.convert(**transcribe_params)
-                    print(f"[STT] ✅ Received response from ElevenLabs API")
                     return result
                 
                 transcription = await loop.run_in_executor(None, transcribe)
@@ -156,32 +161,40 @@ class STTService:
                         'segments': getattr(transcription, 'segments', [])
                     }
                 
-                print(f"[STT] 📥 Received data from ElevenLabs:")
-                print(f"      - Type: {type(transcription).__name__}")
-                print(f"      - Has 'text': {'text' in transcript_dict}")
-                print(f"      - Has 'segments': {'segments' in transcript_dict}")
-                if 'segments' in transcript_dict:
-                    print(f"      - Segments count: {len(transcript_dict.get('segments', []))}")
-                if 'text' in transcript_dict:
-                    text_preview = transcript_dict.get('text', '')[:100]
-                    print(f"      - Text preview: {text_preview}...")
-                
                 # Format response from ElevenLabs
                 segments = []
                 
                 # ElevenLabs returns segments with speaker info when diarize=True
                 if 'segments' in transcript_dict and transcript_dict['segments']:
-                    print(f"[STT] 📝 Processing {len(transcript_dict['segments'])} segments...")
+                    # Debug: log first segment structure to understand API response
+                    first_seg = transcript_dict['segments'][0]
+                    if isinstance(first_seg, dict):
+                        print(f"[STT] [Diarization] 🔍 First segment keys: {list(first_seg.keys())}", flush=True)
+                        print(f"[STT] [Diarization] 🔍 First segment sample: {str(first_seg)[:200]}", flush=True)
+                    
                     for idx, segment in enumerate(transcript_dict['segments']):
                         # Handle both dict and object formats
                         if isinstance(segment, dict):
-                            speaker = segment.get('speaker', segment.get('speaker_id', 'Unknown'))
+                            # Try multiple possible keys for speaker
+                            speaker = (
+                                segment.get('speaker') or 
+                                segment.get('speaker_id') or 
+                                segment.get('speaker_label') or
+                                segment.get('speaker_tag') or
+                                'Unknown'
+                            )
                             raw_text = segment.get('text', '')
                             start = segment.get('start', segment.get('start_time', 0.0))
                             end = segment.get('end', segment.get('end_time', 0.0))
                         else:
-                            # Object format
-                            speaker = getattr(segment, 'speaker', getattr(segment, 'speaker_id', 'Unknown'))
+                            # Object format - try multiple attributes
+                            speaker = (
+                                getattr(segment, 'speaker', None) or
+                                getattr(segment, 'speaker_id', None) or
+                                getattr(segment, 'speaker_label', None) or
+                                getattr(segment, 'speaker_tag', None) or
+                                'Unknown'
+                            )
                             raw_text = getattr(segment, 'text', '')
                             start = getattr(segment, 'start', getattr(segment, 'start_time', 0.0))
                             end = getattr(segment, 'end', getattr(segment, 'end_time', 0.0))
@@ -200,9 +213,6 @@ class STTService:
                                 "start": start,
                                 "end": end,
                             })
-                            print(f"      [{idx+1}] Speaker: {speaker}, Text: {text[:50]}..., Time: {start:.2f}s-{end:.2f}s")
-                        else:
-                            print(f"      [{idx+1}] ⚠️  Filtered out invalid transcription: '{raw_text[:50]}...'")
                 elif 'text' in transcript_dict:
                     # Single text response (no segments)
                     raw_text = transcript_dict['text']
@@ -235,10 +245,6 @@ class STTService:
                         })
                 
                 full_text = " ".join([s["text"] for s in segments])
-                print(f"[STT] ✅ Transcription complete:")
-                print(f"      - Segments: {len(segments)}")
-                print(f"      - Full text length: {len(full_text)} characters")
-                print(f"      - Full text: {full_text[:200]}..." if len(full_text) > 200 else f"      - Full text: {full_text}")
                 
                 return {
                     "success": True,
@@ -491,10 +497,6 @@ class STTService:
     ):
         """Process audio buffer with ElevenLabs transcription"""
         try:
-            print(f"[STT] 🔄 Processing audio buffer for meeting {meeting_id}")
-            print(f"      - WAV size: {len(wav_data)} bytes ({len(wav_data) / (1024 * 1024):.3f} MB)")
-            print(f"      - Is final: {is_final}")
-            
             # Use the existing transcription method
             result = await self.transcribe_with_diarization(
                 audio_data=wav_data,
@@ -502,18 +504,9 @@ class STTService:
                 language=None  # Auto-detect
             )
             
-            print(f"[STT] 📊 Transcription result summary:")
-            print(f"      - Success: {result.get('success')}")
-            print(f"      - Segments: {len(result.get('segments', []))}")
-            if not result.get("success"):
-                print(f"      - Error: {result.get('error', 'Unknown error')}")
-            
             # Call callback if provided (for WebSocket updates)
             if callback:
-                print(f"[STT] 📤 Calling callback with {len(result.get('segments', []))} segments")
                 await callback(result, meeting_id)
-            else:
-                print(f"[STT] ⚠️  No callback provided, skipping WebSocket update")
             
             return result
             
@@ -610,7 +603,7 @@ class STTService:
                             speaker = data.get("speaker", data.get("speaker_id", None))
                             text = data.get("text", "")
                             if speaker:
-                                print(f"[STT] 🎤 Partial transcript with speaker: {speaker}")
+                                print(f"[STT] [Diarization] 🎤 Partial transcript with speaker: {speaker}")
                         else:
                             text = str(data)
                             speaker = None
@@ -643,7 +636,7 @@ class STTService:
                         speaker = data.get("speaker", data.get("speaker_id", None))
                         text = data.get("text", "")
                         if speaker:
-                            print(f"[STT] 🎤 Committed transcript with speaker: {speaker}")
+                            print(f"[STT] [Diarization] 🎤 Committed transcript with speaker: {speaker}")
                     else:
                         text = str(data)
                         speaker = None
@@ -674,7 +667,7 @@ class STTService:
                         text = data.get("text", "")
                         words = data.get("words", [])
                         if speaker:
-                            print(f"[STT] 🎤 Committed transcript with timestamps and speaker: {speaker}")
+                            print(f"[STT] [Diarization] 🎤 Committed transcript with timestamps and speaker: {speaker}")
                     else:
                         text = str(data)
                         words = []
@@ -889,6 +882,158 @@ class STTService:
         """Clear the audio buffer for a meeting"""
         if meeting_id in self.streaming_buffers:
             del self.streaming_buffers[meeting_id]
+    
+    async def add_audio_to_batch_buffer(
+        self,
+        audio_chunk: bytes,
+        meeting_id: str
+    ):
+        """
+        Add audio chunk to batch processing buffer (for periodic diarization)
+        This runs in parallel with realtime transcription
+        """
+        async with self.batch_buffer_lock:
+            self.batch_processing_buffers[meeting_id].append(audio_chunk)
+            # Calculate current buffer size for debugging
+            total_pcm = b''.join(self.batch_processing_buffers[meeting_id])
+            buffer_duration = self._calculate_audio_duration(
+                total_pcm,
+                self.SAMPLE_RATE,
+                self.SAMPLE_WIDTH
+            )
+            if len(self.batch_processing_buffers[meeting_id]) % 10 == 0:  # Log every 10 chunks
+                print(f"[STT] [Diarization] 📦 Batch buffer: {len(self.batch_processing_buffers[meeting_id])} chunks, {buffer_duration:.1f}s audio", flush=True)
+    
+    async def process_batch_buffer_with_diarization(
+        self,
+        meeting_id: str,
+        force: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Process accumulated audio buffer with diarization (batch API)
+        
+        Args:
+            meeting_id: Meeting identifier
+            force: If True, process immediately even if conditions aren't met
+            
+        Returns:
+            Dict with transcription results if processed, None otherwise
+        """
+        import time
+        current_time = time.time()
+        
+        async with self.batch_buffer_lock:
+            if meeting_id not in self.batch_processing_buffers:
+                return None
+            
+            buffer_chunks = self.batch_processing_buffers[meeting_id]
+            if not buffer_chunks:
+                return None
+            
+            # Calculate buffer duration
+            total_pcm = b''.join(buffer_chunks)
+            buffer_duration = self._calculate_audio_duration(
+                total_pcm,
+                self.SAMPLE_RATE,
+                self.SAMPLE_WIDTH
+            )
+            
+            # Check if we should process
+            last_process_time = self.last_batch_process_time.get(meeting_id, 0)
+            time_since_last_process = current_time - last_process_time
+            last_committed = self.last_committed_time.get(meeting_id, 0)
+            time_since_last_committed = current_time - last_committed
+            
+            # Process if:
+            # 1. Forced (e.g., meeting ended)
+            # 2. We have enough audio (at least MIN_AUDIO_FOR_DIARIZATION seconds) AND we've had silence (no new commits) for MIN_SILENCE_FOR_CUT seconds
+            # 3. OR we have MAX_AUDIO_BEFORE_FORCE seconds of audio (process anyway to avoid buffer overflow)
+            # Note: Processes on silence detection after each phrase/sentence
+            should_process = force or (
+                buffer_duration >= self.MIN_AUDIO_FOR_DIARIZATION and  # At least 2 seconds of audio (one phrase)
+                (
+                    time_since_last_committed >= self.MIN_SILENCE_FOR_CUT or  # Natural pause detected (1 second silence)
+                    buffer_duration >= self.MAX_AUDIO_BEFORE_FORCE  # Or we have 30 seconds of audio (process anyway)
+                )
+            )
+            
+            if not should_process:
+                # Debug: log why we're not processing (but only occasionally to avoid spam)
+                import time as time_module
+                last_log_time = getattr(self, '_last_wait_log_time', {}).get(meeting_id, 0)
+                current_time_check = time_module.time()
+                
+                # Only log every 30 seconds to avoid spam
+                if current_time_check - last_log_time > 30:
+                    if buffer_duration < self.MIN_AUDIO_FOR_DIARIZATION:
+                        print(f"[STT] [Diarization] ⏸️  Waiting: {buffer_duration:.1f}s audio (need {self.MIN_AUDIO_FOR_DIARIZATION}s minimum), {time_since_last_committed:.1f}s since last commit", flush=True)
+                    elif time_since_last_committed < self.MIN_SILENCE_FOR_CUT and buffer_duration < self.MAX_AUDIO_BEFORE_FORCE:
+                        print(f"[STT] [Diarization] ⏸️  Waiting: {time_since_last_committed:.1f}s since commit (need {self.MIN_SILENCE_FOR_CUT}s silence), {buffer_duration:.1f}s audio ready", flush=True)
+                    
+                    if not hasattr(self, '_last_wait_log_time'):
+                        self._last_wait_log_time = {}
+                    self._last_wait_log_time[meeting_id] = current_time_check
+                return None
+            
+            # Get buffer and clear it
+            buffer_pcm = b''.join(buffer_chunks)
+            self.batch_processing_buffers[meeting_id].clear()
+            self.last_batch_process_time[meeting_id] = current_time
+            
+            print(f"[STT] [Diarization] 🔄 Processing batch buffer: {buffer_duration:.2f}s of audio, {len(buffer_chunks)} chunks", flush=True)
+        
+        # Convert PCM to WAV
+        wav_data = self._pcm_to_wav(
+            buffer_pcm,
+            self.SAMPLE_RATE,
+            self.CHANNELS,
+            self.SAMPLE_WIDTH
+        )
+        
+        # Process with batch API (with diarization)
+        try:
+            result = await self.transcribe_with_diarization(
+                audio_data=wav_data,
+                audio_format="wav",
+                language=None  # Auto-detect
+            )
+            
+            if result.get("success"):
+                segments = result.get('segments', [])
+                speakers = set(seg.get('speaker', 'Unknown') for seg in segments)
+                print(f"[STT] [Diarization] ✅ Batch diarization complete: {len(segments)} segments, {len(speakers)} speakers: {speakers}", flush=True)
+            else:
+                print(f"[STT] [Diarization] ❌ Batch diarization failed: {result.get('error', 'Unknown error')}", flush=True)
+            
+            return result
+        except Exception as e:
+            print(f"[STT] ❌ Error processing batch buffer: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "error": str(e),
+                "segments": [],
+                "full_text": ""
+            }
+    
+    def mark_committed_transcript(self, meeting_id: str):
+        """Mark that a committed transcript was received (for detecting natural pauses)"""
+        import time
+        self.last_committed_time[meeting_id] = time.time()
+        # Background task will check for silence and process (checks every 5 seconds)
+    
+    def clear_batch_buffer(self, meeting_id: str):
+        """Clear the batch processing buffer for a meeting (synchronous)"""
+        # Note: This is called from both sync and async contexts
+        # We'll use a simple synchronous approach since we're just deleting dict entries
+        # The lock is async, but dict deletion is thread-safe in Python
+        if meeting_id in self.batch_processing_buffers:
+            del self.batch_processing_buffers[meeting_id]
+        if meeting_id in self.last_batch_process_time:
+            del self.last_batch_process_time[meeting_id]
+        if meeting_id in self.last_committed_time:
+            del self.last_committed_time[meeting_id]
 
 
 # Singleton instance

@@ -9,10 +9,11 @@ import uuid
 import asyncio
 
 from services.llm_service import llm_service
+from services.stt_service import stt_service
 from services.websocket_manager import websocket_manager
-from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db, get_meeting_speakers
+from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db, get_meeting_speakers, merge_diarized_transcripts
 from utils.storage import meetings_db, audio_streams, background_tasks
-from services.background_tasks import process_summary_update, process_task_extraction
+from services.background_tasks import process_summary_update, process_task_extraction, process_batch_diarization
 
 router = APIRouter()
 
@@ -37,9 +38,11 @@ async def start_meeting():
     # Start background tasks
     summary_task = asyncio.create_task(process_summary_update(meeting_id))
     task_extraction_task = asyncio.create_task(process_task_extraction(meeting_id))
+    batch_diarization_task = asyncio.create_task(process_batch_diarization(meeting_id))
     background_tasks[meeting_id] = {
         "summary": summary_task,
         "task_extraction": task_extraction_task,
+        "batch_diarization": batch_diarization_task,
     }
     
     # Broadcast meeting started
@@ -71,6 +74,23 @@ async def stop_meeting(meeting_id: str):
         for task in background_tasks[meeting_id].values():
             task.cancel()
         del background_tasks[meeting_id]
+    
+    # Force process any remaining audio with diarization (before generating summary)
+    print(f"[Meetings] 🔄 Processing remaining audio with diarization for meeting {meeting_id}...")
+    diarization_result = await stt_service.process_batch_buffer_with_diarization(
+        meeting_id=meeting_id,
+        force=True  # Force process even if conditions aren't met
+    )
+    
+    if diarization_result and diarization_result.get("success"):
+        segments = diarization_result.get("segments", [])
+        if segments:
+            print(f"[Meetings] ✅ Processed {len(segments)} final segments with diarization")
+            # Merge diarized results with existing transcripts
+            merge_diarized_transcripts(meeting_id, segments)
+    
+    # Clear batch buffer
+    stt_service.clear_batch_buffer(meeting_id)
     
     # Generate final summary if not exists
     if not meeting.get("summary") and meeting.get("transcript"):

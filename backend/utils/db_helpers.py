@@ -261,3 +261,120 @@ def get_speaker_by_name(speaker_name: str) -> Optional[Dict]:
     
     return None
 
+
+def merge_diarized_transcripts(meeting_id: str, diarized_segments: List[Dict]) -> bool:
+    """
+    Merge diarized transcript segments with existing transcripts, replacing "Unknown" speakers
+    
+    Args:
+        meeting_id: Meeting identifier
+        diarized_segments: List of diarized segments with speaker information
+        
+    Returns:
+        True if merge was successful, False otherwise
+    """
+    meeting = get_meeting_from_db_or_memory(meeting_id)
+    if not meeting:
+        print(f"[DB] ⚠️  Meeting {meeting_id} not found for diarization merge")
+        return False
+    
+    transcript = meeting.get("transcript", [])
+    if not transcript:
+        # If no transcripts exist yet, add diarized segments as new entries
+        # This can happen if batch processing runs before realtime transcripts are saved
+        print(f"[DB] [Diarization] ℹ️  No existing transcript, adding {len(diarized_segments)} diarized segments as new entries", flush=True)
+        
+        # Add diarized segments directly to transcript
+        # Note: We add even "Unknown" speakers because they still have transcription text
+        # and can be merged with realtime transcripts later
+        from datetime import datetime
+        speakers_added = set()
+        for diarized_seg in diarized_segments:
+            speaker = diarized_seg.get("speaker", "Unknown")
+            text = diarized_seg.get("text", "")
+            
+            # Only skip if text is empty
+            if not text:
+                continue
+                
+            transcript_entry = {
+                "text": text,
+                "speaker": speaker,
+                "start": diarized_seg.get("start", 0.0),
+                "end": diarized_seg.get("end", 0.0),
+                "timestamp": datetime.now().isoformat(),
+            }
+            transcript.append(transcript_entry)
+            speakers_added.add(speaker)
+        
+        if transcript:
+            meeting["transcript"] = transcript
+            save_meeting_to_db(meeting)
+            print(f"[DB] [Diarization] ✅ Added {len(transcript)} segments with {len(speakers_added)} speakers: {speakers_added}", flush=True)
+            return True
+        else:
+            print(f"[DB] [Diarization] ⚠️  No valid diarized segments to add")
+            return False
+    
+    if not diarized_segments:
+        print(f"[DB] ⚠️  No diarized segments to merge for meeting {meeting_id}")
+        return False
+    
+    print(f"[DB] [Diarization] 🔄 Merging {len(diarized_segments)} diarized segments with {len(transcript)} existing segments", flush=True)
+    
+    # Create a mapping of time ranges to diarized segments
+    # We'll match by time overlap
+    updated_count = 0
+    speakers_found = set()
+    
+    for diarized_seg in diarized_segments:
+        diarized_start = diarized_seg.get("start", 0.0)
+        diarized_end = diarized_seg.get("end", 0.0)
+        diarized_speaker = diarized_seg.get("speaker", "Unknown")
+        diarized_text = diarized_seg.get("text", "")
+        
+        if diarized_speaker == "Unknown":
+            continue  # Skip if diarization didn't identify speaker
+        
+        # Find matching transcript segments by time overlap
+        # Match segments that overlap in time and have "Unknown" speaker
+        for existing_seg in transcript:
+            existing_start = existing_seg.get("start", 0.0)
+            existing_end = existing_seg.get("end", 0.0)
+            existing_speaker = existing_seg.get("speaker", "Unknown")
+            
+            # Only update "Unknown" speaker segments
+            if existing_speaker != "Unknown":
+                continue
+            
+            # Check for time overlap (with some tolerance)
+            # Consider overlap if segments are within 2 seconds of each other
+            tolerance = 2.0
+            if (diarized_start <= existing_end + tolerance and 
+                diarized_end >= existing_start - tolerance):
+                
+                # Check if text is similar (fuzzy match)
+                # Simple check: if texts share significant words
+                existing_text = existing_seg.get("text", "")
+                if existing_text and diarized_text:
+                    # Simple similarity: check if they share at least 30% of words
+                    existing_words = set(existing_text.lower().split())
+                    diarized_words = set(diarized_text.lower().split())
+                    if existing_words and diarized_words:
+                        similarity = len(existing_words & diarized_words) / max(len(existing_words), len(diarized_words))
+                        if similarity >= 0.3:  # At least 30% word overlap
+                            # Update the speaker
+                            existing_seg["speaker"] = diarized_speaker
+                            updated_count += 1
+                            speakers_found.add(diarized_speaker)
+                            break  # Match found, move to next diarized segment
+    
+    if updated_count > 0:
+        print(f"[DB] [Diarization] ✅ Merged {updated_count} segments with {len(speakers_found)} speakers: {speakers_found}", flush=True)
+        # Save updated meeting
+        save_meeting_to_db(meeting)
+        return True
+    else:
+        print(f"[DB] [Diarization] ⚠️  No segments matched for merging", flush=True)
+        return False
+
