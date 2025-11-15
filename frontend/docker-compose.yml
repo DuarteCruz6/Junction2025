@@ -1,0 +1,8 @@
+services:
+  frontend:
+    build: .
+    container_name: junction2025-frontend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
