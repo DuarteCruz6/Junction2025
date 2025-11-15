@@ -8,6 +8,7 @@
 // @input Component.ScriptComponent uiManagerScript
 // @input Component.ScriptComponent captionsScript
 // @input Component.ScriptComponent handTrackingScript
+// @input Component.ScriptComponent asrScript
 
 const controller = script.apiContext.entity;
 
@@ -75,6 +76,18 @@ async function startAI() {
         meetingStartTime = new Date();
         isAIActive = true;
         
+        // Start ASR transcription
+        if (script.asrScript && script.asrScript.api) {
+            try {
+                script.asrScript.api.startTranscribing();
+                print("Controller: ASR transcription started");
+            } catch (error) {
+                print(`Controller: Warning - Could not start ASR: ${error.message}`);
+            }
+        } else {
+            print("Controller: Warning - ASR script not found or not configured");
+        }
+        
         // Enable UI components
         if (script.captionsScript) {
             script.captionsScript.api.enable();
@@ -98,6 +111,16 @@ async function stopAI() {
     print("Controller: Stopping AI...");
     
     try {
+        // Stop ASR transcription first
+        if (script.asrScript && script.asrScript.api) {
+            try {
+                script.asrScript.api.stopTranscribing();
+                print("Controller: ASR transcription stopped");
+            } catch (error) {
+                print(`Controller: Warning - Could not stop ASR: ${error.message}`);
+            }
+        }
+        
         // Stop meeting session
         const meetingData = await script.apiClient.stopMeeting();
         isAIActive = false;

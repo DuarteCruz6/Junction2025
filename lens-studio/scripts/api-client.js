@@ -339,6 +339,50 @@ class APIClient {
             throw error;
         }
     }
+
+    /**
+     * Send transcription from Lens Studio ASR to backend
+     * @param {string} text - Transcribed text
+     * @param {boolean} isFinal - Whether this is a final transcription
+     * @param {string} speaker - Optional speaker identifier
+     * @returns {Promise<Object>} Response from backend
+     */
+    async sendTranscription(text, isFinal = false, speaker = "Unknown") {
+        if (!this.currentMeetingId) {
+            throw new Error("No active meeting");
+        }
+
+        if (!text || text.trim().length === 0) {
+            // Skip empty transcriptions
+            return { success: true, skipped: true };
+        }
+
+        try {
+            const response = await fetch(`${this.baseUrl}/api/transcriptions/${this.currentMeetingId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    segments: [{
+                        text: text.trim(),
+                        speaker: speaker,
+                        is_final: isFinal,
+                    }]
+                }),
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            print(`Error sending transcription: ${error.message}`);
+            throw error;
+        }
+    }
 }
 
 // Export singleton instance
