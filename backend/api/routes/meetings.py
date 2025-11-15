@@ -87,7 +87,7 @@ async def stop_meeting(meeting_id: str):
         if segments:
             print(f"[Meetings] ✅ Processed {len(segments)} final segments with diarization")
             # Merge diarized results with existing transcripts
-            merge_diarized_transcripts(meeting_id, segments)
+            await merge_diarized_transcripts(meeting_id, segments)
     
     # Clear batch buffer
     stt_service.clear_batch_buffer(meeting_id)

@@ -117,7 +117,7 @@ async def process_batch_diarization(meeting_id: str):
                         print(f"[Background] [Diarization] ✅ Processed {len(segments)} segments, {len(speakers)} speakers: {speakers}", flush=True)
                         
                         # Merge diarized results with existing transcripts (or add as new if no transcripts exist)
-                        merge_success = merge_diarized_transcripts(meeting_id, segments)
+                        merge_success = await merge_diarized_transcripts(meeting_id, segments)
                         if merge_success:
                             print(f"[Background] [Diarization] ✅ Merged diarized speakers into database for meeting {meeting_id}", flush=True)
                         # Don't log failure as error - it's expected if no transcripts exist yet or no matches found

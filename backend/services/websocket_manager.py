@@ -59,11 +59,20 @@ class WebSocketManager:
     
     async def send_transcript_update(self, meeting_id: str, transcript_entry: dict):
         """Send transcript update to meeting participants"""
+        print(f"[WebSocketManager] [DEBUG] 📢 Sending transcript_update broadcast")
+        print(f"[WebSocketManager] [DEBUG]   Meeting ID: {meeting_id}")
+        print(f"[WebSocketManager] [DEBUG]   Transcript entry keys: {list(transcript_entry.keys())}")
+        print(f"[WebSocketManager] [DEBUG]   Has text: {'text' in transcript_entry}")
+        print(f"[WebSocketManager] [DEBUG]   Has translated_text: {'translated_text' in transcript_entry}")
+        print(f"[WebSocketManager] [DEBUG]   Text value: '{transcript_entry.get('text', '')[:50]}...'")
+        print(f"[WebSocketManager] [DEBUG]   Translated_text value: '{transcript_entry.get('translated_text', 'N/A')[:50]}...'")
+        
         message = {
             "type": "transcript_update",
             "data": transcript_entry
         }
         await self.broadcast_to_meeting(meeting_id, message)
+        print(f"[WebSocketManager] [DEBUG] ✅ Transcript update broadcast sent")
     
     async def send_summary_update(self, meeting_id: str, summary: str):
         """Send summary update to meeting participants"""

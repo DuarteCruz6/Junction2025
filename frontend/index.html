@@ -879,7 +879,7 @@
 
                 // Create AudioContext
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: SAMPLE_RATE
+                    //sampleRate: SAMPLE_RATE
                 });
 
                 // Create AudioWorklet processor inline
@@ -1073,7 +1073,9 @@
                 
                 if (msgType === 'partial_transcript') {
                     // Handle partial transcript (interim results from realtime API)
+                    console.log('[Frontend] [DEBUG] 📥 Received partial_transcript message');
                     const text = data.data?.text || '';
+                    console.log('[Frontend] [DEBUG]   Partial text:', text);
                     if (text) {
                         updatePartialTranscript(text);
                     }
@@ -1081,16 +1083,34 @@
                     // Clear partial transcript when we get final result
                     clearPartialTranscript();
                     
+                    console.log('[Frontend] [DEBUG] 📥 Received transcription_result message');
+                    console.log('[Frontend] [DEBUG]   Full data:', data);
                     const segments = data.data?.segments || [];
                     const fullText = data.data?.full_text || '';
                     
+                    console.log('[Frontend] [DEBUG]   Number of segments:', segments.length);
+                    console.log('[Frontend] [DEBUG]   Full text:', fullText);
+                    
                     if (segments.length > 0) {
                         // Add each segment as a separate entry with its own timeout
-                        segments.forEach(segment => {
-                            addTranscriptEntry(segment.speaker || 'Unknown', segment.text || '');
+                        segments.forEach((segment, index) => {
+                            console.log(`[Frontend] [DEBUG]   Processing segment ${index}:`, segment);
+                            console.log(`[Frontend] [DEBUG]     Segment keys:`, Object.keys(segment));
+                            console.log(`[Frontend] [DEBUG]     Has text:`, 'text' in segment, '=', segment.text);
+                            console.log(`[Frontend] [DEBUG]     Has translated_text:`, 'translated_text' in segment, '=', segment.translated_text);
+                            
+                            // Use translated_text for subtitles if available, otherwise use text
+                            const displayText = segment.translated_text || segment.text || '';
+                            const speaker = segment.speaker || 'Unknown';
+                            
+                            console.log(`[Frontend] [DEBUG]     Using displayText:`, displayText);
+                            addTranscriptEntry(speaker, displayText);
                         });
                     } else if (fullText) {
+                        console.log('[Frontend] [DEBUG]   No segments, using fullText:', fullText);
                         addTranscriptEntry('Unknown', fullText);
+                    } else {
+                        console.log('[Frontend] [DEBUG]   ⚠️  No segments and no fullText!');
                     }
                 } else if (msgType === 'transcription_error') {
                     const error = data.data?.error || 'Unknown error';
@@ -1141,6 +1161,16 @@
         
         // Add transcript entry to UI
         function addTranscriptEntry(speaker, text) {
+            console.log('[Frontend] [DEBUG] 🎬 addTranscriptEntry called');
+            console.log('[Frontend] [DEBUG]   Speaker:', speaker);
+            console.log('[Frontend] [DEBUG]   Text:', text);
+            console.log('[Frontend] [DEBUG]   Text length:', text?.length || 0);
+            
+            if (!text || text.trim() === '') {
+                console.log('[Frontend] [DEBUG]   ⚠️  Empty text, skipping entry');
+                return;
+            }
+            
             // Clear partial transcript when adding final entry
             clearPartialTranscript();
             
@@ -1661,7 +1691,7 @@
                             transcriptContent.innerHTML = transcript.map(segment => `
                                 <div class="transcript-segment">
                                     <div class="transcript-speaker-name">${segment.speaker || 'Unknown'}</div>
-                                    <div class="transcript-segment-text">${segment.text || ''}</div>
+                                    <div class="transcript-segment-text">${segment.translated_text || segment.text || ''}</div>
                                 </div>
                             `).join('');
                         }

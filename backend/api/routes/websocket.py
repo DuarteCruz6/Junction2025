@@ -6,11 +6,13 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 import json
 import base64
 import sys
+import asyncio
 from datetime import datetime
 from typing import Optional
 
 from services.websocket_manager import websocket_manager
 from services.stt_service import stt_service
+from services.translation_service import translation_service
 from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db
 from models.database import UserSettings, SessionLocal
 
@@ -106,6 +108,10 @@ async def audio_streaming_endpoint(
         # Callback for committed transcripts (final results)
         async def on_committed_transcript(data: dict):
             """Handle committed transcript from realtime API"""
+            print(f"[WebSocket] [DEBUG] 🎯 on_committed_transcript CALLBACK TRIGGERED!")
+            print(f"[WebSocket] [DEBUG]   Data received: {data}")
+            print(f"[WebSocket] [DEBUG]   Data type: {type(data)}")
+            print(f"[WebSocket] [DEBUG]   Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
             try:
                 # Handle errors
                 if data.get("type") == "error":
@@ -124,7 +130,12 @@ async def audio_streaming_endpoint(
                 text = data.get("text", "")
                 words = data.get("words", [])
                 
+                print(f"[WebSocket] [DEBUG]   Extracted text: '{text}'")
+                print(f"[WebSocket] [DEBUG]   Text length: {len(text)}")
+                print(f"[WebSocket] [DEBUG]   Words: {words}")
+                
                 if not text:
+                    print(f"[WebSocket] [DEBUG] ⚠️  Empty text, returning early")
                     return
                 
                 meeting = get_meeting_from_db_or_memory(meeting_id)
@@ -154,7 +165,42 @@ async def audio_streaming_endpoint(
                     "timestamp": datetime.now().isoformat(),
                 }
                 
+                # Translate the text and add translated_text field (non-blocking)
+                # First, ensure translated_text exists with original text as fallback
+                transcript_entry["translated_text"] = transcript_entry.get("text", "")
+                transcript_entry["was_translated"] = False
+                
+                # Try to translate in background (non-blocking)
+                # This way even if translation fails or takes time, subtitles still work
+                async def translate_async():
+                    try:
+                        print(f"[WebSocket] [DEBUG] 🔄 Starting translation for text: '{text[:50]}...'")
+                        translated_entry = await translation_service.translate_transcript_entry(
+                            transcript_entry=transcript_entry.copy(),  # Work on a copy
+                            target_language=language_preference
+                        )
+                        # Update the stored transcript entry with translation
+                        meeting = get_meeting_from_db_or_memory(meeting_id)
+                        if meeting:
+                            # Find and update the entry
+                            for entry in meeting.get("transcript", []):
+                                if entry.get("text") == text and entry.get("timestamp") == transcript_entry.get("timestamp"):
+                                    entry["translated_text"] = translated_entry.get("translated_text", text)
+                                    entry["was_translated"] = translated_entry.get("was_translated", False)
+                                    entry["detected_language"] = translated_entry.get("detected_language")
+                                    save_meeting_to_db(meeting)
+                                    print(f"[WebSocket] [DEBUG] ✅ Translation completed and saved: {translated_entry.get('translated_text', '')[:50]}")
+                                    break
+                    except Exception as e:
+                        print(f"[WebSocket] [DEBUG] ❌ Translation failed (non-fatal): {e}")
+                        # Don't break flow - original text is already in translated_text
+                
+                # Start translation in background, don't wait for it
+                asyncio.create_task(translate_async())
+                
                 print(f"📝 Unknown: {text}", flush=True)
+                if transcript_entry.get("was_translated"):
+                    print(f"🌐 Translated: {transcript_entry.get('translated_text', '')}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 save_meeting_to_db(meeting)
@@ -172,14 +218,24 @@ async def audio_streaming_endpoint(
                     print(f"[WebSocket] Error broadcasting transcript: {e}")
                 
                 # Send to audio streaming client
-                await websocket.send_json({
+                print(f"[WebSocket] [DEBUG] 📤 Sending transcription_result to client")
+                print(f"[WebSocket] [DEBUG]   Segment keys: {list(transcript_entry.keys())}")
+                print(f"[WebSocket] [DEBUG]   Segment text: '{transcript_entry.get('text', '')[:50]}...'")
+                print(f"[WebSocket] [DEBUG]   Segment translated_text: '{transcript_entry.get('translated_text', 'N/A')[:50]}...'")
+                
+                response_data = {
                     "type": "transcription_result",
                     "data": {
                         "segments": [transcript_entry],
                         "full_text": text,
                         "count": 1
                     }
-                })
+                }
+                print(f"[WebSocket] [DEBUG]   Response data keys: {list(response_data['data'].keys())}")
+                print(f"[WebSocket] [DEBUG]   First segment in response: {list(response_data['data']['segments'][0].keys()) if response_data['data']['segments'] else 'No segments'}")
+                
+                await websocket.send_json(response_data)
+                print(f"[WebSocket] [DEBUG] ✅ Response sent successfully")
             except Exception as e:
                 print(f"[WebSocket] Error handling committed transcript: {e}")
         
@@ -253,10 +309,41 @@ async def audio_streaming_endpoint(
                     "timestamp": datetime.now().isoformat(),
                 }
                 
+                # Translate the text and add translated_text field (non-blocking)
+                # First, ensure translated_text exists with original text as fallback
+                original_text = segment.get("text", "")
+                transcript_entry["translated_text"] = original_text
+                transcript_entry["was_translated"] = False
+                
+                # Try to translate in background (non-blocking)
+                async def translate_async():
+                    try:
+                        translated_entry = await translation_service.translate_transcript_entry(
+                            transcript_entry=transcript_entry.copy(),
+                            target_language=language_preference
+                        )
+                        # Update the stored transcript entry
+                        meeting = get_meeting_from_db_or_memory(meeting_id)
+                        if meeting:
+                            for entry in meeting.get("transcript", []):
+                                if entry.get("text") == original_text and entry.get("timestamp") == transcript_entry.get("timestamp"):
+                                    entry["translated_text"] = translated_entry.get("translated_text", original_text)
+                                    entry["was_translated"] = translated_entry.get("was_translated", False)
+                                    entry["detected_language"] = translated_entry.get("detected_language")
+                                    save_meeting_to_db(meeting)
+                                    break
+                    except Exception as e:
+                        print(f"[WebSocket] [DEBUG] ❌ Batch translation failed (non-fatal): {e}")
+                
+                # Start translation in background, don't wait
+                asyncio.create_task(translate_async())
+                
                 # Show transcription (clean output)
                 speaker = segment.get("speaker", "Unknown")
                 text = segment.get("text", "")
                 print(f"📝 {speaker}: {text}", flush=True)
+                if transcript_entry.get("was_translated"):
+                    print(f"🌐 Translated: {transcript_entry.get('translated_text', '')}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 new_segments.append(transcript_entry)
@@ -274,6 +361,13 @@ async def audio_streaming_endpoint(
             save_meeting_to_db(meeting)
             
             # Send confirmation to audio streaming client
+            print(f"[WebSocket] [DEBUG] 📤 Sending batch transcription_result to client")
+            print(f"[WebSocket] [DEBUG]   Number of segments: {len(new_segments)}")
+            if new_segments:
+                print(f"[WebSocket] [DEBUG]   First segment keys: {list(new_segments[0].keys())}")
+                print(f"[WebSocket] [DEBUG]   First segment text: '{new_segments[0].get('text', '')[:50]}...'")
+                print(f"[WebSocket] [DEBUG]   First segment translated_text: '{new_segments[0].get('translated_text', 'N/A')[:50]}...'")
+            
             response_data = {
                 "type": "transcription_result",
                 "data": {
@@ -282,9 +376,10 @@ async def audio_streaming_endpoint(
                     "count": len(new_segments)
                 }
             }
-            # print(f"[WebSocket] Sending transcription_result with {len(new_segments)} segments")  # DEBUG
+            print(f"[WebSocket] [DEBUG]   Response data prepared, sending...")
             try:
                 await websocket.send_json(response_data)
+                print(f"[WebSocket] [DEBUG] ✅ Batch response sent successfully")
                 # print(f"[WebSocket] Transcription result sent successfully")  # DEBUG
             except (WebSocketDisconnect, RuntimeError, ConnectionError) as ws_error:
                 # WebSocket is closed or disconnected, ignore silently

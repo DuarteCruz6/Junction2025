@@ -23,7 +23,7 @@ Stores meeting session information, transcripts, summaries, and associated tasks
 | `end_time` | DateTime | NULLABLE | When the meeting ended |
 | `status` | String | NOT NULL, DEFAULT 'active' | Meeting status: `active`, `completed`, `cancelled` |
 | `summary` | Text | NULLABLE | LLM-generated meeting summary |
-| `transcript` | JSON | NOT NULL, DEFAULT [] | Array of transcript segments |
+| `transcript` | JSON | NOT NULL, DEFAULT [] | Array of transcript segments (with translation support) |
 | `tasks` | JSON | NOT NULL, DEFAULT [] | Array of associated tasks |
 | `created_at` | DateTime | NOT NULL, DEFAULT now() | Record creation timestamp |
 | `updated_at` | DateTime | NOT NULL, DEFAULT now() | Last update timestamp (auto-updated) |
@@ -35,12 +35,24 @@ Each transcript segment in the `transcript` JSON array has this structure:
 ```json
 {
   "text": "Hello, how are you?",
+  "translated_text": "Hello, how are you?",
   "speaker": "John Doe",
   "start": 0.5,
   "end": 2.3,
-  "timestamp": "2025-01-15T10:30:00Z"
+  "timestamp": "2025-01-15T10:30:00Z",
+  "detected_language": "en",
+  "was_translated": false
 }
 ```
+
+### Translation Fields
+
+- `text`: Original transcribed text in the source language
+- `translated_text`: Translated text in the target language (default: English). If the original text is already in the target language, this will be the same as `text`. This field should be used for displaying subtitles.
+- `detected_language`: ISO 639-1 language code of the detected source language (e.g., "en", "pt", "es")
+- `was_translated`: Boolean indicating whether translation was performed (false if already in target language)
+
+**Note:** For subtitles display, use `translated_text` instead of `text` to show the translated version when the original text is not in the target language.
 
 ### Tasks JSON Structure
 

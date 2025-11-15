@@ -283,7 +283,7 @@ def get_speaker_by_name(speaker_name: str) -> Optional[Dict]:
     return None
 
 
-def merge_diarized_transcripts(meeting_id: str, diarized_segments: List[Dict]) -> bool:
+async def merge_diarized_transcripts(meeting_id: str, diarized_segments: List[Dict]) -> bool:
     """
     Merge diarized transcript segments with existing transcripts, replacing "Unknown" speakers
     
@@ -325,6 +325,35 @@ def merge_diarized_transcripts(meeting_id: str, diarized_segments: List[Dict]) -
                 "end": diarized_seg.get("end", 0.0),
                 "timestamp": datetime.now().isoformat(),
             }
+            
+            # Add translated_text field (non-blocking translation)
+            # First set original text as fallback
+            transcript_entry["translated_text"] = text
+            transcript_entry["was_translated"] = False
+            
+            # Translate in background (non-blocking)
+            async def translate_async():
+                try:
+                    from services.translation_service import translation_service
+                    translated_entry = await translation_service.translate_transcript_entry(
+                        transcript_entry=transcript_entry.copy()
+                    )
+                    # Update meeting with translation
+                    meeting = get_meeting_from_db_or_memory(meeting_id)
+                    if meeting:
+                        for entry in meeting.get("transcript", []):
+                            if entry.get("text") == text and entry.get("timestamp") == transcript_entry.get("timestamp"):
+                                entry["translated_text"] = translated_entry.get("translated_text", text)
+                                entry["was_translated"] = translated_entry.get("was_translated", False)
+                                entry["detected_language"] = translated_entry.get("detected_language")
+                                save_meeting_to_db(meeting)
+                                break
+                except Exception as e:
+                    print(f"[DB] [Diarization] ⚠️  Translation failed (non-fatal): {e}")
+            
+            import asyncio
+            asyncio.create_task(translate_async())
+            
             transcript.append(transcript_entry)
             speakers_added.add(speaker)
         
