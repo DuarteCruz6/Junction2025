@@ -22,6 +22,7 @@ Stores meeting session information, transcripts, summaries, and associated tasks
 | `start_time` | DateTime | NOT NULL, DEFAULT now() | When the meeting started |
 | `end_time` | DateTime | NULLABLE | When the meeting ended |
 | `status` | String | NOT NULL, DEFAULT 'active' | Meeting status: `active`, `completed`, `cancelled` |
+| `title` | String | NULLABLE | LLM-generated meeting title |
 | `summary` | Text | NULLABLE | LLM-generated meeting summary |
 | `transcript` | JSON | NOT NULL, DEFAULT [] | Array of transcript segments |
 | `tasks` | JSON | NOT NULL, DEFAULT [] | Array of associated tasks |
@@ -249,7 +250,7 @@ If you have an existing database and need to update the schema:
    ```
 
 The migration script will:
-- Remove the `title` column from the `meetings` table (if it exists)
+- Add the `title` column to the `meetings` table (if missing)
 - Add the `title` column to the `tasks` table (if missing)
 - Drop the `meeting_speakers` table (if it exists)
 - Ensure all other tables are up to date

@@ -18,6 +18,7 @@ from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, 
 # from utils.db_helpers import get_meeting_speakers, get_speakers_for_meetings_batch
 from utils.storage import meetings_db, audio_streams, background_tasks
 from services.background_tasks import process_summary_update, process_task_extraction, process_batch_diarization
+from models.database import Task, SessionLocal
 
 router = APIRouter()
 
@@ -206,6 +207,158 @@ async def stop_meeting(meeting_id: str):
         )
         if result["success"]:
             meeting["summary"] = result["summary"]
+            # Save title if provided
+            if result.get("title"):
+                meeting["title"] = result["title"]
+    
+    # Extract tasks using OpenAI API
+    extracted_task_ids = []
+    if meeting.get("transcript") and len(meeting["transcript"]) > 0:
+        print(f"[Meetings] 🔄 Extracting tasks using OpenAI for meeting {meeting_id}...", flush=True)
+        # Get existing tasks from database to avoid duplicates
+        existing_tasks_list = []
+        if SessionLocal:
+            try:
+                db = SessionLocal()
+                existing_db_tasks = db.query(Task).filter(Task.meeting_id == meeting_id).all()
+                for task in existing_db_tasks:
+                    existing_tasks_list.append({
+                        "description": task.description,
+                        "title": task.title,
+                    })
+                db.close()
+            except Exception as e:
+                print(f"[Meetings] ⚠️  Error getting existing tasks: {e}", flush=True)
+                if 'db' in locals():
+                    db.close()
+        
+        task_result = await llm_service.extract_tasks(
+            transcript=meeting["transcript"],
+            existing_tasks=existing_tasks_list
+        )
+        
+        if task_result["success"] and task_result.get("tasks"):
+            # Get existing task IDs from database to avoid duplicates
+            existing_db_task_ids = set()
+            if SessionLocal:
+                try:
+                    db = SessionLocal()
+                    existing_tasks = db.query(Task).filter(Task.meeting_id == meeting_id).all()
+                    existing_db_task_ids = {t.id for t in existing_tasks}
+                    db.close()
+                except Exception as e:
+                    print(f"[Meetings] ⚠️  Error checking existing tasks: {e}", flush=True)
+                    if 'db' in locals():
+                        db.close()
+            
+            # Save each extracted task to the database
+            for task_data in task_result["tasks"]:
+                try:
+                    # Generate task ID
+                    task_id = str(uuid.uuid4())
+                    
+                    # Check for duplicates by description (basic check)
+                    # In the future, we could add more sophisticated duplicate detection
+                    task_description = task_data.get("description", "").lower().strip()
+                    is_duplicate = False
+                    if SessionLocal and task_description:
+                        try:
+                            db = SessionLocal()
+                            existing_task = db.query(Task).filter(
+                                Task.meeting_id == meeting_id,
+                                Task.description.ilike(f"%{task_description[:50]}%")
+                            ).first()
+                            if existing_task:
+                                is_duplicate = True
+                            db.close()
+                        except Exception:
+                            if 'db' in locals():
+                                db.close()
+                    
+                    if is_duplicate:
+                        print(f"[Meetings] ⏭️  Skipping duplicate task: {task_description[:50]}", flush=True)
+                        continue
+                    
+                    # Parse due_date if provided
+                    due_date = None
+                    if task_data.get("due_date"):
+                        try:
+                            from datetime import datetime as dt
+                            due_date_str = task_data["due_date"]
+                            # Handle different date formats
+                            if "T" in due_date_str:
+                                # ISO format with time
+                                due_date = dt.fromisoformat(due_date_str.replace("Z", "+00:00"))
+                            else:
+                                # Just date (YYYY-MM-DD)
+                                due_date = dt.strptime(due_date_str, "%Y-%m-%d")
+                        except Exception as e:
+                            # If parsing fails, leave as None
+                            print(f"[Meetings] ⚠️  Could not parse due_date '{task_data.get('due_date')}': {e}", flush=True)
+                            due_date = None
+                    
+                    # Save to database
+                    if SessionLocal:
+                        try:
+                            db = SessionLocal()
+                            new_task = Task(
+                                id=task_id,
+                                meeting_id=meeting_id,
+                                title=task_data.get("title", task_data.get("description", "")[:100]),
+                                description=task_data.get("description", ""),
+                                assignee=task_data.get("assignee"),
+                                due_date=due_date,
+                                status="pending",
+                                priority=task_data.get("priority", "medium"),
+                            )
+                            db.add(new_task)
+                            db.commit()
+                            db.close()
+                            
+                            extracted_task_ids.append(task_id)
+                            print(f"[Meetings] ✅ Saved task to database: {task_id} - {task_data.get('title', '')[:50]}", flush=True)
+                        except Exception as e:
+                            print(f"[Meetings] ❌ Error saving task to database: {e}", flush=True)
+                            import traceback
+                            traceback.print_exc()
+                            if 'db' in locals():
+                                db.rollback()
+                                db.close()
+                    else:
+                        # Fallback: if database not available, still add to meeting's tasks JSON
+                        # but this shouldn't happen in production
+                        print(f"[Meetings] ⚠️  Database not available, cannot save task", flush=True)
+                        
+                except Exception as e:
+                    print(f"[Meetings] ❌ Error processing extracted task: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+            
+            # Update meeting's tasks JSON to only contain task_ids
+            # Get all task IDs from database for this meeting
+            if SessionLocal:
+                try:
+                    db = SessionLocal()
+                    all_tasks = db.query(Task).filter(Task.meeting_id == meeting_id).all()
+                    meeting["tasks"] = [{"task_id": t.id} for t in all_tasks]
+                    db.close()
+                except Exception as e:
+                    print(f"[Meetings] ⚠️  Error updating meeting tasks JSON: {e}", flush=True)
+                    if 'db' in locals():
+                        db.close()
+            
+            # Broadcast task update via WebSocket
+            if extracted_task_ids:
+                await websocket_manager.send_tasks_update(
+                    meeting_id=meeting_id,
+                    tasks=meeting.get("tasks", [])
+                )
+                print(f"[Meetings] ✅ Extracted and saved {len(extracted_task_ids)} tasks using OpenAI", flush=True)
+        elif not task_result["success"]:
+            error = task_result.get("error", "Unknown error")
+            print(f"[Meetings] ⚠️  Failed to extract tasks with OpenAI: {error}", flush=True)
+        else:
+            print(f"[Meetings] ℹ️  No tasks extracted from meeting transcript", flush=True)
     
     # Save to database
     save_meeting_to_db(meeting)
@@ -222,6 +375,7 @@ async def stop_meeting(meeting_id: str):
         "status": "completed",
         "end_time": meeting["end_time"],
         "summary": meeting.get("summary"),
+        "tasks_extracted": len(extracted_task_ids),
     })
 
 
@@ -311,6 +465,9 @@ async def get_meeting_summary(meeting_id: str):
         )
         if result["success"]:
             meeting["summary"] = result["summary"]
+            # Save title if provided
+            if result.get("title"):
+                meeting["title"] = result["title"]
             save_meeting_to_db(meeting)
     
     return JSONResponse(content={

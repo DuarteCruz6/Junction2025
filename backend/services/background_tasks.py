@@ -54,6 +54,10 @@ async def process_summary_update(meeting_id: str):
                 
                 if result["success"]:
                     meeting["summary"] = result["summary"]
+                    # Only update title if it doesn't exist yet and title is provided
+                    # (incremental updates don't generate new titles)
+                    if result.get("title") and not meeting.get("title"):
+                        meeting["title"] = result["title"]
                     
                     # Save to database
                     save_meeting_to_db(meeting)
