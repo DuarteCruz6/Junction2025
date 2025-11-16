@@ -157,6 +157,51 @@
             pointer-events: auto;
         }
 
+        #taskNotification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 16px 20px;
+            background: rgba(76, 175, 80, 0.95);
+            color: white;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            z-index: 10001;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+            cursor: pointer;
+            max-width: 280px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        #taskNotification.show {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        #taskNotification:hover {
+            background: rgba(69, 160, 73, 0.95);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        #taskNotification .task-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        #taskNotification .task-text {
+            flex: 1;
+        }
+
         #transcript {
             position: fixed;
             bottom: 60px;
@@ -1120,6 +1165,10 @@
     <div id="transcript" class="hidden">
     </div>
     <div id="notification"></div>
+    <div id="taskNotification">
+        <span class="task-icon">✓</span>
+        <span class="task-text"></span>
+    </div>
 
     <!-- Menu Button -->
     <button id="menuButton">☰</button>
@@ -1234,6 +1283,7 @@
         let isRecording = false;
         let currentPartialTranscript = null; // For displaying interim results
         const wordTimeouts = new Map(); // Store timeouts for individual words
+        let previousTaskCount = 0; // Track previous task count to detect new tasks
         
         // Audio processing state - streaming mode
         let audioBuffer = [];
@@ -1243,7 +1293,9 @@
         const aiToggle = document.getElementById('aiToggle');
         const transcriptDiv = document.getElementById('transcript');
         const notificationDiv = document.getElementById('notification');
+        const taskNotificationDiv = document.getElementById('taskNotification');
         let notificationTimeout = null;
+        let taskNotificationTimeout = null;
 
         // Show temporary notification
         function showNotification(message, duration = 3000) {
@@ -1268,6 +1320,37 @@
                 notificationTimeout = null;
             }
             notificationDiv.classList.remove('show');
+        }
+
+        // Show task notification
+        function showTaskNotification(taskCount) {
+            // Clear any existing timeout
+            if (taskNotificationTimeout) {
+                clearTimeout(taskNotificationTimeout);
+            }
+            
+            const taskText = taskCount === 1 
+                ? '1 task was added' 
+                : `${taskCount} tasks were added`;
+            
+            taskNotificationDiv.querySelector('.task-text').textContent = taskText;
+            taskNotificationDiv.classList.add('show');
+            
+            // Auto-hide after 10 seconds
+            taskNotificationTimeout = setTimeout(() => {
+                hideTaskNotification();
+            }, 10000);
+        }
+
+        // Task notification click handler will be set up after menu elements are defined
+
+        // Hide task notification
+        function hideTaskNotification() {
+            if (taskNotificationTimeout) {
+                clearTimeout(taskNotificationTimeout);
+                taskNotificationTimeout = null;
+            }
+            taskNotificationDiv.classList.remove('show');
         }
 
         // Calculate RMS energy of audio chunk (Float32Array, values -1 to 1)
@@ -1622,6 +1705,24 @@
                     const error = data.data?.error || 'Unknown error';
                     console.error('❌ Backend error:', error);
                     showNotification(`Error: ${error}`, 5000);
+                } else if (msgType === 'tasks_update') {
+                    // Handle tasks update from meeting
+                    const tasks = data.data?.tasks || [];
+                    const currentTaskCount = tasks.length;
+                    
+                    // Only show notification if new tasks were added
+                    if (currentTaskCount > previousTaskCount) {
+                        const newTasksCount = currentTaskCount - previousTaskCount;
+                        showTaskNotification(newTasksCount);
+                    }
+                    
+                    previousTaskCount = currentTaskCount;
+                } else if (msgType === 'status_update') {
+                    // Handle status updates (e.g., meeting completed)
+                    const status = data.data?.status;
+                    if (status === 'completed') {
+                        console.log('✅ Meeting completed');
+                    }
                 }
             } catch (error) {
                 console.error('❌ Error handling WebSocket message:', error);
@@ -2025,9 +2126,26 @@
                 
                 // Stop meeting via API
                 if (meetingId) {
-                    await fetch(`${BACKEND_URL}/api/meetings/${meetingId}/stop`, {
+                    // Reset task count tracking for the new meeting
+                    previousTaskCount = 0;
+                    
+                    const stopResponse = await fetch(`${BACKEND_URL}/api/meetings/${meetingId}/stop`, {
                         method: 'POST',
                     });
+                    
+                    if (stopResponse.ok) {
+                        const stopData = await stopResponse.json();
+                        const tasksExtracted = stopData.tasks_extracted || 0;
+                        
+                        // Show task notification if tasks were extracted
+                        // This handles the case where WebSocket might be closed before tasks_update is sent
+                        if (tasksExtracted > 0) {
+                            // Small delay to ensure WebSocket message is processed first if it arrives
+                            setTimeout(() => {
+                                showTaskNotification(tasksExtracted);
+                            }, 500);
+                        }
+                    }
                 }
                 
                 aiToggle.checked = false;
@@ -2155,6 +2273,20 @@
         const meetingDetailView = document.getElementById('meetingDetailView');
         const taskDetailView = document.getElementById('taskDetailView');
         const settingsView = document.getElementById('settingsView');
+
+        // Make task notification clickable to open tasks tab
+        taskNotificationDiv.addEventListener('click', async () => {
+            hideTaskNotification();
+            // Open menu if not already open
+            if (!menuOverlay.classList.contains('show')) {
+                menuButton.click();
+            }
+            // Open tasks view
+            if (currentView !== tasksView) {
+                showView(tasksView, tasksButton, null);
+                await loadTasks();
+            }
+        });
 
         // Menu state
         let currentView = null;
@@ -2348,6 +2480,13 @@
                     content.innerHTML = '<div class="empty-state">No tasks found</div>';
                     return;
                 }
+
+                // Sort tasks by creation date (most recent first)
+                tasks.sort((a, b) => {
+                    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+                    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+                    return dateB - dateA; // Descending order (newest first)
+                });
 
                 content.innerHTML = tasks.map(task => {
                     const isCompleted = task.status === 'completed';
