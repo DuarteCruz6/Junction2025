@@ -294,7 +294,7 @@
             transform: translateY(-50%);
             width: 60px;
             height: 60px;
-            background: rgba(76, 175, 80, 0.9);
+            background: rgba(0, 0, 0, 0.6);
             border: none;
             border-radius: 50%;
             color: white;
@@ -304,13 +304,15 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
             transition: all 0.3s ease;
         }
 
         #menuButton:hover {
-            background: rgba(76, 175, 80, 1);
+            background: rgba(0, 0, 0, 0.7);
             transform: translateY(-50%) scale(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
         }
 
         #menuOverlay {
@@ -1198,16 +1200,16 @@
         <div id="menuPanel">
             <div class="menu-icons">
                 <button class="menu-icon-button" id="tasksButton" title="Tasks">
-                    ✓
+                    📋
                 </button>
                 <button class="menu-icon-button" id="summarizationButton" style="display: none;" title="Summarization">
-                    📄
+                    📑
                 </button>
-                <button class="menu-icon-button" id="historyButton" style="display: none;" title="History">
-                    🕐
+                <button class="menu-icon-button" id="historyButton" title="History">
+                    📅
                 </button>
                 <button class="menu-icon-button" id="settingsButton" title="Settings">
-                    ⚙️
+                    🔧
                 </button>
             </div>
         </div>
@@ -2352,9 +2354,10 @@
 
         // Update menu buttons visibility based on AI toggle
         function updateMenuButtonsVisibility() {
-            const aiOn = aiToggle.checked;
-            summarizationButton.style.display = aiOn ? 'block' : 'none';
-            historyButton.style.display = aiOn ? 'none' : 'block';
+            // Always show tasks, old meetings (history), and settings
+            // Always hide summarization button
+            summarizationButton.style.display = 'none';
+            historyButton.style.display = 'block';
         }
 
         // Hide all views
@@ -2487,25 +2490,10 @@
             content.innerHTML = '<div class="empty-state">Loading tasks...</div>';
 
             try {
-                const aiOn = aiToggle.checked;
-                let tasks = [];
-
-                if (aiOn) {
-                    // Get tasks from current meeting
-                    const activeMeetingRes = await fetch(`${BACKEND_URL}/api/meetings/active`);
-                    const activeMeetingData = await activeMeetingRes.json();
-                    
-                    if (activeMeetingData.meeting_id) {
-                        const tasksRes = await fetch(`${BACKEND_URL}/api/meetings/${activeMeetingData.meeting_id}/tasks`);
-                        const tasksData = await tasksRes.json();
-                        tasks = tasksData.tasks || [];
-                    }
-                } else {
-                    // Get all incomplete tasks
-                    const tasksRes = await fetch(`${BACKEND_URL}/api/tasks/incomplete`);
-                    const tasksData = await tasksRes.json();
-                    tasks = tasksData.tasks || [];
-                }
+                // Always get all incomplete tasks, regardless of meeting state
+                const tasksRes = await fetch(`${BACKEND_URL}/api/tasks/incomplete`);
+                const tasksData = await tasksRes.json();
+                const tasks = tasksData.tasks || [];
 
                 if (tasks.length === 0) {
                     content.innerHTML = '<div class="empty-state">No tasks found</div>';
