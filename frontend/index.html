@@ -610,6 +610,7 @@
 
         .personality-selector {
             margin-bottom: 16px;
+            overflow: visible;
         }
 
         .personality-selector-label {
@@ -624,6 +625,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            overflow: visible;
         }
 
         .personality-button {
@@ -683,6 +685,158 @@
             align-items: center;
             justify-content: center;
             font-weight: bold;
+        }
+
+        .random-voice-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            min-width: 150px;
+        }
+
+        .random-voice-label {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .random-voice-change-button {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid rgba(76, 175, 80, 0.5);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .random-voice-change-button:hover {
+            background: rgba(76, 175, 80, 0.5);
+            border-color: rgba(76, 175, 80, 0.8);
+            transform: scale(1.05);
+        }
+
+        .voice-description-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 1000000;
+            pointer-events: auto;
+        }
+
+        .voice-description-content {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: auto;
+            min-width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+
+        .voice-description-arrow {
+            position: absolute;
+            bottom: -8px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid rgba(0, 0, 0, 0.95);
+            transform: translateX(-50%);
+        }
+
+        .voice-description-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .voice-description-header h3 {
+            color: white;
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .voice-description-close {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .voice-description-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .voice-description-body {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .voice-description-body p {
+            margin: 0;
+            white-space: pre-wrap;
+        }
+
+        .personality-button-tooltip {
+            position: fixed;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            font-size: 12px;
+            border-radius: 6px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 100000;
+            max-width: 250px;
+            white-space: normal;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            left: 0;
+            top: 0;
+            visibility: hidden;
+        }
+
+        .personality-button-tooltip::after {
+            content: "";
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-bottom-color: rgba(0, 0, 0, 0.95);
+        }
+
+        .personality-button-tooltip.show {
+            opacity: 1;
+            visibility: visible;
         }
 
         .transcript-content {
@@ -2392,6 +2546,29 @@
 
         // Store selected voice for current meeting
         let selectedVoiceId = null;
+        let availableVoices = [];
+
+        // Helper function to escape HTML entities
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Function to get emotion for a voice - assigns unique emotion based on index
+        function getVoiceEmotion(index) {
+            // Exactly 20 unique emotions for 20 voices
+            const emotions = [
+                'Happy', 'Calm', 'Excited', 'Professional', 'Friendly',
+                'Confident', 'Playful', 'Thoughtful', 'Energetic', 'Warm',
+                'Smooth', 'Bold', 'Gentle', 'Passionate', 'Cool',
+                'Elegant', 'Enthusiastic', 'Soothing', 'Charismatic', 'Sincere'
+            ];
+            
+            // Use index to assign emotion, wrap around if more than 20 voices
+            return emotions[index % emotions.length];
+        }
 
         // Show meeting detail
         window.showMeetingDetail = async function(meetingId) {
@@ -2412,11 +2589,14 @@
                 const meeting = await meetingRes.json();
                 const voicesData = await voicesRes.json();
                 const voices = voicesData.voices || [];
+                availableVoices = voices; // Store voices for random selection
                 
-                // Reset and set default to first voice for this meeting
+                // Reset and set default to random voice for this meeting
                 selectedVoiceId = null;
                 if (voices.length > 0) {
-                    selectedVoiceId = voices[0].voice_id;
+                    // Select a random voice
+                    const randomIndex = Math.floor(Math.random() * voices.length);
+                    selectedVoiceId = voices[randomIndex].voice_id;
                 }
                 
                 const title = meeting.title || `Meeting ${new Date(meeting.start_time).toLocaleString()}`;
@@ -2429,28 +2609,28 @@
                     headerText.textContent = title;
                 }
                 
-                // Build personality buttons
-                const personalityButtons = voices.map(voice => {
-                    const isSelected = voice.voice_id === selectedVoiceId;
-                    // Escape HTML in title attribute
-                    const title = `${voice.name} - ${(voice.description || '').replace(/"/g, '&quot;')}`;
-                    const bitmojiUrl = voice.bitmoji_url || voice.emoji; // Fallback to emoji if bitmoji_url not available
-                    return `
-                        <button class="personality-button ${isSelected ? 'selected' : ''}" 
-                                onclick="selectPersonality('${voice.voice_id}', this)"
-                                title="${title}">
-                            ${bitmojiUrl.startsWith('http') ? `<img src="${bitmojiUrl}" alt="${voice.name}" class="bitmoji-avatar" />` : bitmojiUrl}
-                        </button>
-                    `;
-                }).join('');
+                // Get current selected voice info
+                const currentVoice = voices.find(v => v.voice_id === selectedVoiceId) || voices[0];
+                const currentBitmojiUrl = currentVoice ? (currentVoice.bitmoji_url || currentVoice.emoji) : '🎲';
+                const currentVoiceName = currentVoice ? (currentVoice.name || 'Random Voice') : 'Random Voice';
+                const currentVoiceDescription = currentVoice ? (currentVoice.description || 'No description available') : 'No description available';
                 
                 content.innerHTML = `
                     <div class="meeting-detail">
                         <div class="meeting-detail-summary">${summary}</div>
                         <div class="personality-selector">
-                            <label class="personality-selector-label">Choose Personality:</label>
+                            <label class="personality-selector-label">Voice Personality:</label>
                             <div class="personality-buttons">
-                                ${personalityButtons}
+                                <button class="personality-button random-voice-button" 
+                                        data-voice-name="${escapeHtml(currentVoiceName)}" 
+                                        data-voice-description="${escapeHtml(currentVoiceDescription)}"
+                                        onclick="showVoiceDescriptionFromButton(this)">
+                                    ${currentBitmojiUrl.startsWith('http') ? `<img src="${currentBitmojiUrl}" alt="${escapeHtml(currentVoiceName)}" class="bitmoji-avatar" />` : currentBitmojiUrl}
+                                    <span class="random-voice-label">${escapeHtml(currentVoiceName)}</span>
+                                </button>
+                                <button class="random-voice-change-button" onclick="selectRandomVoice()" title="Change to random voice">
+                                    🎲 Random
+                                </button>
                             </div>
                         </div>
                         <div class="audio-buttons-group">
@@ -2473,24 +2653,118 @@
                         </div>
                     </div>
                 `;
+                
             } catch (error) {
                 console.error('Error loading meeting detail:', error);
                 content.innerHTML = '<div class="empty-state">Error loading meeting details</div>';
             }
         };
 
-        // Select personality
-        window.selectPersonality = function(voiceId, button) {
-            selectedVoiceId = voiceId;
+        // Select random voice
+        window.selectRandomVoice = function() {
+            if (availableVoices.length === 0) {
+                console.warn('No voices available');
+                return;
+            }
             
-            // Update all personality buttons
-            const allButtons = document.querySelectorAll('.personality-button');
-            allButtons.forEach(btn => {
-                btn.classList.remove('selected');
+            // Select a random voice
+            const randomIndex = Math.floor(Math.random() * availableVoices.length);
+            const randomVoice = availableVoices[randomIndex];
+            selectedVoiceId = randomVoice.voice_id;
+            
+            // Update the display
+            const button = document.querySelector('.random-voice-button');
+            if (button) {
+                const bitmojiUrl = randomVoice.bitmoji_url || randomVoice.emoji;
+                const voiceName = randomVoice.name || 'Random Voice';
+                const voiceDescription = randomVoice.description || 'No description available';
+                
+                // Update button content and data attributes
+                if (bitmojiUrl.startsWith('http')) {
+                    button.innerHTML = `<img src="${bitmojiUrl}" alt="${escapeHtml(voiceName)}" class="bitmoji-avatar" /><span class="random-voice-label">${escapeHtml(voiceName)}</span>`;
+                } else {
+                    button.innerHTML = `${bitmojiUrl}<span class="random-voice-label">${escapeHtml(voiceName)}</span>`;
+                }
+                button.setAttribute('data-voice-name', escapeHtml(voiceName));
+                button.setAttribute('data-voice-description', escapeHtml(voiceDescription));
+            }
+        };
+
+        // Show voice description from button data attributes
+        window.showVoiceDescriptionFromButton = function(button) {
+            const voiceName = button.getAttribute('data-voice-name') || 'Unknown Voice';
+            const voiceDescription = button.getAttribute('data-voice-description') || 'No description available';
+            showVoiceDescription(voiceName, voiceDescription, button);
+        };
+
+        // Show voice description
+        window.showVoiceDescription = function(voiceName, voiceDescription, buttonElement) {
+            // Remove any existing modal first
+            const existingModal = document.querySelector('.voice-description-modal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Get button position
+            const buttonRect = buttonElement.getBoundingClientRect();
+            
+            // Create modal overlay (transparent background, just for click-outside detection)
+            const modal = document.createElement('div');
+            modal.className = 'voice-description-modal';
+            
+            // Create content div
+            const content = document.createElement('div');
+            content.className = 'voice-description-content';
+            content.innerHTML = `
+                <div class="voice-description-header">
+                    <h3>${escapeHtml(voiceName)}</h3>
+                    <button class="voice-description-close" onclick="this.closest('.voice-description-modal').remove()">×</button>
+                </div>
+                <div class="voice-description-body">
+                    <p>${escapeHtml(voiceDescription)}</p>
+                </div>
+            `;
+            
+            // Position content above the button
+            const spacing = 12; // Space between button and modal
+            const contentWidth = 400; // Approximate width, will be adjusted
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            
+            // Adjust position after content is rendered to get actual dimensions
+            setTimeout(() => {
+                const actualWidth = content.offsetWidth;
+                const actualHeight = content.offsetHeight;
+                
+                // Calculate horizontal position (centered on button)
+                const left = buttonRect.left + (buttonRect.width / 2) - (actualWidth / 2);
+                const adjustedLeft = Math.max(10, Math.min(left, window.innerWidth - actualWidth - 10));
+                
+                // Calculate vertical position (above button)
+                const top = buttonRect.top - actualHeight - spacing;
+                // If it would go off-screen at the top, position it below instead
+                const adjustedTop = top < 10 ? buttonRect.bottom + spacing : top;
+                
+                content.style.left = adjustedLeft + 'px';
+                content.style.top = adjustedTop + 'px';
+                
+                // Add arrow pointing to button (only if positioned above)
+                if (adjustedTop < buttonRect.top) {
+                    const arrow = document.createElement('div');
+                    arrow.className = 'voice-description-arrow';
+                    const arrowLeft = (buttonRect.left + buttonRect.width / 2) - adjustedLeft;
+                    arrow.style.left = Math.max(20, Math.min(arrowLeft, actualWidth - 20)) + 'px';
+                    content.appendChild(arrow);
+                }
+            }, 0);
+            
+            // Close on background click
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    modal.remove();
+                }
             });
-            
-            // Mark selected button
-            button.classList.add('selected');
         };
 
         // Toggle transcript
