@@ -685,6 +685,44 @@
             font-weight: bold;
         }
 
+        .personality-button-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            font-size: 12px;
+            border-radius: 6px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 1000;
+            max-width: 250px;
+            white-space: normal;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .personality-button-tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.95);
+        }
+
+        .personality-button:hover .personality-button-tooltip {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-4px);
+        }
+
         .transcript-content {
             background: rgba(255, 255, 255, 0.1);
             padding: 16px;
@@ -2391,6 +2429,28 @@
         // Store selected voice for current meeting
         let selectedVoiceId = null;
 
+        // Helper function to escape HTML entities
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Function to get emotion for a voice - assigns unique emotion based on index
+        function getVoiceEmotion(index) {
+            // Exactly 20 unique emotions for 20 voices
+            const emotions = [
+                'Happy', 'Calm', 'Excited', 'Professional', 'Friendly',
+                'Confident', 'Playful', 'Thoughtful', 'Energetic', 'Warm',
+                'Smooth', 'Bold', 'Gentle', 'Passionate', 'Cool',
+                'Elegant', 'Enthusiastic', 'Soothing', 'Charismatic', 'Sincere'
+            ];
+            
+            // Use index to assign emotion, wrap around if more than 20 voices
+            return emotions[index % emotions.length];
+        }
+
         // Show meeting detail
         window.showMeetingDetail = async function(meetingId) {
             const content = document.getElementById('meetingDetailContent');
@@ -2430,14 +2490,16 @@
                 // Build personality buttons
                 const personalityButtons = voices.map(voice => {
                     const isSelected = voice.voice_id === selectedVoiceId;
-                    // Escape HTML in title attribute
-                    const title = `${voice.name} - ${(voice.description || '').replace(/"/g, '&quot;')}`;
+                    // Get emotion for this voice
+                    const emotion = getVoiceEmotion(voice);
+                    const tooltipText = escapeHtml(emotion);
                     const bitmojiUrl = voice.bitmoji_url || voice.emoji; // Fallback to emoji if bitmoji_url not available
+                    const escapedName = escapeHtml(voice.name || '');
                     return `
                         <button class="personality-button ${isSelected ? 'selected' : ''}" 
-                                onclick="selectPersonality('${voice.voice_id}', this)"
-                                title="${title}">
-                            ${bitmojiUrl.startsWith('http') ? `<img src="${bitmojiUrl}" alt="${voice.name}" class="bitmoji-avatar" />` : bitmojiUrl}
+                                onclick="selectPersonality('${voice.voice_id}', this)">
+                            ${bitmojiUrl.startsWith('http') ? `<img src="${bitmojiUrl}" alt="${escapedName}" class="bitmoji-avatar" />` : bitmojiUrl}
+                            <span class="personality-button-tooltip">${tooltipText}</span>
                         </button>
                     `;
                 }).join('');
