@@ -1043,6 +1043,23 @@
             flex: 1;
         }
 
+        .subtitles-toggle-button {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid rgba(76, 175, 80, 0.5);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .subtitles-toggle-button:hover {
+            background: rgba(76, 175, 80, 0.5);
+        }
+
         .add-language-button {
             background: rgba(76, 175, 80, 0.5);
             border: none;
@@ -1525,8 +1542,12 @@
                 aiToggle.checked = true;
                 aiToggle.disabled = false;
                 showNotification('Meeting active', 3000);
-                // Remove hidden class, but keep empty class so it stays hidden until content appears
-                transcriptDiv.classList.remove('hidden');
+                // Apply subtitles preference - only remove hidden if enabled
+                // The transcript will show when content appears (existing logic)
+                if (!areSubtitlesEnabled()) {
+                    transcriptDiv.classList.add('hidden');
+                }
+                // Don't force remove 'hidden' here - let content-based logic handle it
                 transcriptDiv.classList.add('empty');
                 
             } catch (error) {
@@ -1696,8 +1717,10 @@
             // Final enforcement: ensure character limit is never exceeded
             enforceMaxCharacters();
             
-            // Make sure transcript is visible when adding content (only if not manually hidden)
-            if (!transcriptDiv.classList.contains('hidden')) {
+            // Make sure transcript is visible when adding content (only if subtitles enabled)
+            if (areSubtitlesEnabled()) {
+                // If subtitles are enabled, remove 'hidden' class so content can be shown
+                transcriptDiv.classList.remove('hidden');
                 transcriptDiv.classList.remove('empty');
             }
             
@@ -1832,9 +1855,10 @@
         function checkAndHideTranscriptIfEmpty() {
             if (!transcriptDiv) return;
             
-            // Check if transcript div is manually hidden
-            if (transcriptDiv.classList.contains('hidden')) {
-                return; // Don't override manual hidden state
+            // If subtitles are disabled, always keep hidden
+            if (!areSubtitlesEnabled()) {
+                transcriptDiv.classList.add('hidden');
+                return;
             }
             
             // Check if there are any visible entries
@@ -1989,8 +2013,10 @@
             // Final enforcement: ensure character limit is never exceeded
             enforceMaxCharacters();
             
-            // Make sure transcript is visible when adding content (only if not manually hidden)
-            if (!transcriptDiv.classList.contains('hidden')) {
+            // Make sure transcript is visible when adding content (only if subtitles enabled)
+            if (areSubtitlesEnabled()) {
+                // If subtitles are enabled, remove 'hidden' class so content can be shown
+                transcriptDiv.classList.remove('hidden');
                 transcriptDiv.classList.remove('empty');
             }
             
@@ -2110,6 +2136,9 @@
         // Start camera/microphone when page loads
         window.addEventListener('DOMContentLoaded', () => {
             console.log('[Frontend] 🚀 Page loaded, initializing...');
+            
+            // Apply subtitles preference on page load
+            applySubtitlesPreference();
             
             // Verify AI toggle exists
             if (!aiToggle) {
@@ -2882,8 +2911,16 @@
                 const preferredLanguage = settings.preferred_language || '';
                 const spokenLanguages = settings.spoken_languages || [];
 
+                // Load subtitles preference from localStorage (default to true)
+                const subtitlesEnabled = localStorage.getItem('subtitlesEnabled') !== 'false';
+
                 content.innerHTML = `
                     <form class="settings-form" onsubmit="saveSettings(event)">
+                        <div class="settings-field">
+                            <button type="button" class="subtitles-toggle-button" onclick="toggleSubtitlesButton()">
+                                ${subtitlesEnabled ? 'Turn off Subtitles' : 'Turn on Subtitles'}
+                            </button>
+                        </div>
                         <div class="settings-field">
                             <label>Preferred Language</label>
                             <select id="preferredLanguage">
@@ -2967,6 +3004,45 @@
                 }
             });
         };
+
+        // Check if subtitles are enabled
+        function areSubtitlesEnabled() {
+            return localStorage.getItem('subtitlesEnabled') !== 'false';
+        }
+
+        // Toggle subtitles button
+        window.toggleSubtitlesButton = function() {
+            const currentState = areSubtitlesEnabled();
+            const newState = !currentState;
+            
+            // Save preference to localStorage
+            localStorage.setItem('subtitlesEnabled', newState);
+            
+            // Update button text
+            const button = document.querySelector('.subtitles-toggle-button');
+            if (button) {
+                button.textContent = newState ? 'Turn off Subtitles' : 'Turn on Subtitles';
+            }
+            
+            // Apply the preference - only hide if disabled, don't force show if enabled
+            // (let the existing content-based logic handle showing)
+            const transcriptDiv = document.getElementById('transcript');
+            if (transcriptDiv && !newState) {
+                // If disabling, hide immediately
+                transcriptDiv.classList.add('hidden');
+            }
+            // If enabling, don't force show - let content-based logic handle it
+        };
+
+        // Apply subtitles preference on page load
+        function applySubtitlesPreference() {
+            const subtitlesEnabled = areSubtitlesEnabled();
+            const transcriptDiv = document.getElementById('transcript');
+            if (transcriptDiv && !subtitlesEnabled) {
+                // Only hide if disabled, don't force show if enabled
+                transcriptDiv.classList.add('hidden');
+            }
+        }
 
         // Save settings
         window.saveSettings = async function(event) {
