@@ -4,6 +4,7 @@ Handles text-to-speech conversion using ElevenLabs API
 """
 
 import os
+import hashlib
 from typing import Optional, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
@@ -14,29 +15,9 @@ load_dotenv()
 class TTSService:
     """Service for Text-to-Speech conversion using ElevenLabs"""
     
-    # Emoji mapping for voices
-    VOICE_EMOJI_MAP = {
-        "2EiwWnXFnvU5JabPnv8n": "🎭",  # Clyde
-        "CwhRBWXzGAHq8TQ4Fs17": "😊",  # Roger
-        "EXAVITQu4vr4xnSDxMaL": "👩‍💼",  # Sarah
-        "FGY2WhTYpPnrIDTdsKH5": "☀️",  # Laura
-        "IKne3meq5aSn9XLyUdCD": "⚡",  # Charlie
-        "JBFqnCBsd6RMkjVDRZzb": "🎤",  # George
-        "N2lVS1w4EtoT3dr4eOWO": "🎪",  # Callum
-        "SAz9YHcvj6GT2YYXdXww": "🌊",  # River
-        "SOYHLrjzK2X1ezoPC6cr": "⚔️",  # Harry
-        "TX3LPaxmHKxFdv7VOQHJ": "🔥",  # Liam
-        "Xb7hH8MSUJpSbSDYk0k2": "📚",  # Alice
-        "XrExE9yKIg1WjnnlVkGX": "💼",  # Matilda
-        "bIHbv24MWmeRgasZH58o": "🏖️",  # Will
-        "cgSgspJ2msm6clMCkdW9": "✨",  # Jessica
-        "cjVigY5qzO86Huf0OWal": "🎩",  # Eric
-        "iP95p4xoKVk53GoZ742B": "🌿",  # Chris
-        "nPczCjzI2devNBz1zQrb": "🎙️",  # Brian
-        "onwK4e9ZLuTAKqWW03F9": "📺",  # Daniel
-        "pFZP5JQG7iQjIQuC4Bku": "🎀",  # Lily
-        "pqHfZKP75CvOlQylNhV4": "👴",  # Bill
-    }
+    # Bitmoji-style avatar generation
+    # Using a service that generates unique Bitmoji-style avatars for each voice
+    # In production, you could integrate with Bitmoji Kit API for user-specific avatars
     
     def __init__(self):
         api_key = os.getenv("ELEVENLABS_API_KEY")
@@ -56,9 +37,22 @@ class TTSService:
         self.audio_output_dir = Path(__file__).parent.parent / "audio_outputs"
         self.audio_output_dir.mkdir(exist_ok=True)
     
+    def get_voice_bitmoji(self, voice_id: str) -> str:
+        """Get Bitmoji URL for a voice ID"""
+        # Generate a unique Bitmoji-style avatar for each voice using a hash-based approach
+        # This creates consistent, unique avatars for each voice ID
+        # Using DiceBear's avataaars style which creates Bitmoji-like avatars
+        hash_value = int(hashlib.md5(voice_id.encode()).hexdigest(), 16)
+        seed = str(hash_value % 1000000)  # Use hash as seed for consistent avatar
+        
+        # Using DiceBear Avataaars (Bitmoji-style) with unique seed per voice
+        bitmoji_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf"
+        return bitmoji_url
+    
     def get_voice_emoji(self, voice_id: str) -> str:
-        """Get emoji for a voice ID"""
-        return self.VOICE_EMOJI_MAP.get(voice_id, "🎙️")  # Default emoji
+        """Get emoji for a voice ID (deprecated - use get_voice_bitmoji instead)"""
+        # Keep for backward compatibility
+        return "🎙️"
     
     def generate_audio(
         self,
@@ -167,13 +161,11 @@ class TTSService:
             }
         
         # Combine transcript segments into a single text
-        # Format: "Speaker: text. Speaker: text."
         transcript_text = ""
         for segment in transcript:
-            speaker = segment.get("speaker", "Unknown")
             text = segment.get("text", "").strip()
             if text:
-                transcript_text += f"{speaker}: {text}. "
+                transcript_text += f"{text}. "
         
         return self.generate_audio(
             text=transcript_text,
@@ -215,7 +207,8 @@ class TTSService:
                     "category": getattr(voice, 'category', None) or "",
                     "labels": getattr(voice, 'labels', None) or {},
                     "preview_url": getattr(voice, 'preview_url', None) or "",
-                    "emoji": self.get_voice_emoji(voice_id),
+                    "bitmoji_url": self.get_voice_bitmoji(voice_id),
+                    "emoji": self.get_voice_emoji(voice_id),  # Keep for backward compatibility
                 }
                 voices.append(voice_data)
             

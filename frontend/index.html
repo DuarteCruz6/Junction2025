@@ -626,6 +626,22 @@
             min-width: 50px;
             text-align: center;
             position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bitmoji-avatar {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            border-radius: 50%;
+            background: transparent;
+            display: block;
+        }
+
+        .bitmoji-avatar:not([src]) {
+            display: none;
         }
 
         .personality-button:hover {
@@ -1421,10 +1437,10 @@
                     if (segments.length > 0) {
                         // Add each segment as a separate entry with its own timeout
                         segments.forEach(segment => {
-                            addTranscriptEntry(segment.speaker || 'Unknown', segment.text || '');
+                            addTranscriptEntry(segment.text || '');
                         });
                     } else if (fullText) {
-                        addTranscriptEntry('Unknown', fullText);
+                        addTranscriptEntry(fullText);
                     }
                 } else if (msgType === 'transcription_error') {
                     const error = data.data?.error || 'Unknown error';
@@ -1456,7 +1472,7 @@
             // Add new partial transcript
             const entry = document.createElement('div');
             entry.className = 'transcript-entry transcript-entry-partial';
-            entry.innerHTML = `<span class="transcript-speaker">🎤 Speaking:</span><span class="transcript-text" style="opacity: 0.7; font-style: italic;">${text}</span>`;
+            entry.innerHTML = `<span class="transcript-text" style="opacity: 0.7; font-style: italic;">${text}</span>`;
             transcriptDiv.appendChild(entry);
             
             // Auto-scroll to bottom
@@ -1474,18 +1490,12 @@
         }
         
         // Add transcript entry to UI
-        function addTranscriptEntry(speaker, text) {
+        function addTranscriptEntry(text) {
             // Clear partial transcript when adding final entry
             clearPartialTranscript();
             
             const entry = document.createElement('div');
             entry.className = 'transcript-entry';
-            
-            // Create speaker label
-            const speakerSpan = document.createElement('span');
-            speakerSpan.className = 'transcript-speaker';
-            speakerSpan.textContent = `🎤 ${speaker}: `;
-            entry.appendChild(speakerSpan);
             
             // Create text container
             const textContainer = document.createElement('span');
@@ -2144,11 +2154,12 @@
                     const isSelected = voice.voice_id === selectedVoiceId;
                     // Escape HTML in title attribute
                     const title = `${voice.name} - ${(voice.description || '').replace(/"/g, '&quot;')}`;
+                    const bitmojiUrl = voice.bitmoji_url || voice.emoji; // Fallback to emoji if bitmoji_url not available
                     return `
                         <button class="personality-button ${isSelected ? 'selected' : ''}" 
                                 onclick="selectPersonality('${voice.voice_id}', this)"
                                 title="${title}">
-                            ${voice.emoji}
+                            ${bitmojiUrl.startsWith('http') ? `<img src="${bitmojiUrl}" alt="${voice.name}" class="bitmoji-avatar" />` : bitmojiUrl}
                         </button>
                     `;
                 }).join('');
@@ -2226,7 +2237,6 @@
                         } else {
                             transcriptContent.innerHTML = transcript.map(segment => `
                                 <div class="transcript-segment">
-                                    <div class="transcript-speaker-name">${segment.speaker || 'Unknown'}</div>
                                     <div class="transcript-segment-text">${segment.text || ''}</div>
                                 </div>
                             `).join('');
