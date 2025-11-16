@@ -2597,16 +2597,38 @@
                     // Position menu panel relative to menu button's current position
                     const menuButtonRect = menuButton.getBoundingClientRect();
                     const menuButtonCenterY = menuButtonRect.top + menuButtonRect.height / 2;
+                    const menuButtonCenterX = menuButtonRect.left + menuButtonRect.width / 2;
                     const menuPanel = document.getElementById('menuPanel');
                     
+                    // Check if menu button is too far to the right (in right 40% of screen)
+                    const screenWidth = window.innerWidth;
+                    const isTooFarRight = menuButtonCenterX > screenWidth * 0.6;
+                    
                     if (menuPanel) {
-                        // Position panel to the right of menu button, vertically centered
-                        const panelLeft = menuButtonRect.right + 20; // 20px gap from menu button
                         const panelTop = menuButtonCenterY;
                         
-                        menuPanel.style.setProperty('transform', 'translateY(-50%)', 'important');
-                        menuPanel.style.setProperty('top', panelTop + 'px', 'important');
-                        menuPanel.style.setProperty('left', panelLeft + 'px', 'important');
+                        if (isTooFarRight) {
+                            // Position panel to the left of menu button
+                            // Menu panel width is approximately 50px (icon button width)
+                            const panelWidth = 50;
+                            const panelLeft = menuButtonRect.left - panelWidth - 20; // 20px gap from menu button
+                            
+                            menuPanel.style.setProperty('transform', 'translateY(-50%)', 'important');
+                            menuPanel.style.setProperty('top', panelTop + 'px', 'important');
+                            menuPanel.style.setProperty('left', panelLeft + 'px', 'important');
+                            menuPanel.style.setProperty('right', 'auto', 'important');
+                        } else {
+                            // Position panel to the right of menu button (default)
+                            const panelLeft = menuButtonRect.right + 20; // 20px gap from menu button
+                            
+                            menuPanel.style.setProperty('transform', 'translateY(-50%)', 'important');
+                            menuPanel.style.setProperty('top', panelTop + 'px', 'important');
+                            menuPanel.style.setProperty('left', panelLeft + 'px', 'important');
+                            menuPanel.style.setProperty('right', 'auto', 'important');
+                        }
+                        
+                        // Store the position preference for views
+                        menuPanel.dataset.isTooFarRight = isTooFarRight ? 'true' : 'false';
                     }
                     
                     updateMenuButtonsVisibility();
@@ -2669,12 +2691,37 @@
             }
             currentView = viewElement;
             
-            // Position view on the right side of the screen (default position)
-            // Reset any custom positioning to use CSS defaults
-            viewElement.style.setProperty('transform', 'translateY(-50%)', 'important');
-            viewElement.style.setProperty('top', '50%', 'important');
-            viewElement.style.setProperty('right', '10px', 'important');
-            viewElement.style.setProperty('left', 'auto', 'important');
+            // Position view based on menu button position
+            const menuButton = document.getElementById('menuButton');
+            const menuPanel = document.getElementById('menuPanel');
+            let isTooFarRight = false;
+            
+            if (menuButton && menuPanel) {
+                // Check if menu button is too far to the right
+                const menuButtonRect = menuButton.getBoundingClientRect();
+                const menuButtonCenterX = menuButtonRect.left + menuButtonRect.width / 2;
+                const screenWidth = window.innerWidth;
+                isTooFarRight = menuButtonCenterX > screenWidth * 0.6;
+                
+                // Or use stored preference from menu panel
+                if (menuPanel.dataset.isTooFarRight) {
+                    isTooFarRight = menuPanel.dataset.isTooFarRight === 'true';
+                }
+            }
+            
+            if (isTooFarRight) {
+                // Position view on the left side of the screen
+                viewElement.style.setProperty('transform', 'translateY(-50%)', 'important');
+                viewElement.style.setProperty('top', '50%', 'important');
+                viewElement.style.setProperty('left', '10px', 'important');
+                viewElement.style.setProperty('right', 'auto', 'important');
+            } else {
+                // Position view on the right side of the screen (default)
+                viewElement.style.setProperty('transform', 'translateY(-50%)', 'important');
+                viewElement.style.setProperty('top', '50%', 'important');
+                viewElement.style.setProperty('right', '10px', 'important');
+                viewElement.style.setProperty('left', 'auto', 'important');
+            }
             
             updateBackArrows();
         }
