@@ -30,24 +30,26 @@
         }
 
         #controls {
-            position: fixed !important;
-            top: 20px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
-            z-index: 9999 !important;
-            display: flex !important;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            z-index: 9999;
+            display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            background: rgba(0, 0, 0, 0.9) !important;
+            background: rgba(0, 0, 0, 0.9);
             padding: 16px;
             border-radius: 12px;
             backdrop-filter: blur(10px);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            visibility: visible !important;
-            opacity: 1 !important;
-            width: fit-content !important;
+            visibility: visible;
+            opacity: 1;
+            width: fit-content;
+            cursor: move;
+            user-select: none;
         }
 
         .ai-toggle-container {
@@ -149,6 +151,8 @@
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
             max-width: 300px;
+            cursor: move;
+            user-select: none;
         }
 
         #notification.show {
@@ -174,11 +178,12 @@
             transform: translateY(20px);
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
-            cursor: pointer;
+            cursor: move;
             max-width: 280px;
             display: flex;
             align-items: center;
             gap: 12px;
+            user-select: none;
         }
 
         #taskNotification.show {
@@ -206,14 +211,14 @@
             position: fixed;
             bottom: 60px;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translate(-50%, 0);
             max-width: 600px;
             width: calc(100% - 40px);
             max-height: 120px;
             overflow-y: auto;
             background: rgba(0, 0, 0, 0.5);
             color: white;
-            padding: 12px 16px;
+            padding: 0;
             border-radius: 12px;
             font-size: 16px;
             line-height: 1.5;
@@ -222,6 +227,32 @@
             font-weight: 500;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(10px);
+            user-select: none;
+        }
+
+        #transcript .transcript-drag-handle {
+            height: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px 12px 0 0;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        #transcript .transcript-drag-handle::before {
+            content: '⋮⋮';
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12px;
+            letter-spacing: 2px;
+        }
+
+        #transcript .transcript-content {
+            padding: 12px 16px;
+            overflow-y: auto;
+            max-height: calc(120px - 24px);
         }
 
         #transcript.hidden {
@@ -299,7 +330,7 @@
             border-radius: 50%;
             color: white;
             font-size: 24px;
-            cursor: pointer;
+            cursor: move;
             z-index: 10001;
             display: flex;
             align-items: center;
@@ -307,11 +338,11 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(10px);
             transition: all 0.3s ease;
+            user-select: none;
         }
 
-        #menuButton:hover {
+        #menuButton:hover:not(:active) {
             background: rgba(0, 0, 0, 0.7);
-            transform: translateY(-50%) scale(1.1);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
         }
 
@@ -351,6 +382,8 @@
             top: 50%;
             left: 100px;
             transform: translateY(-50%);
+            cursor: move;
+            user-select: none;
         }
 
         #menuHeader {
@@ -422,6 +455,11 @@
             max-width: calc(100vw - 140px);
             max-height: 80vh;
             overflow-y: auto;
+        }
+
+        .view-header {
+            cursor: move;
+            user-select: none;
         }
 
         .view.active {
@@ -1184,6 +1222,8 @@
     </div>
     
     <div id="transcript" class="hidden">
+        <div class="transcript-drag-handle"></div>
+        <div class="transcript-content"></div>
     </div>
     <div id="notification"></div>
     <div id="taskNotification">
@@ -1313,6 +1353,7 @@
         const videoElement = document.getElementById('videoElement');
         const aiToggle = document.getElementById('aiToggle');
         const transcriptDiv = document.getElementById('transcript');
+        const transcriptContentDiv = transcriptDiv ? transcriptDiv.querySelector('.transcript-content') : null;
         const notificationDiv = document.getElementById('notification');
         const taskNotificationDiv = document.getElementById('taskNotification');
         let notificationTimeout = null;
@@ -1757,7 +1798,7 @@
         // Update partial transcript (interim results)
         function updatePartialTranscript(text) {
             // Remove existing partial transcript if any
-            const existingPartial = transcriptDiv.querySelector('.transcript-entry-partial');
+            const existingPartial = transcriptContentDiv ? transcriptContentDiv.querySelector('.transcript-entry-partial') : null;
             if (existingPartial) {
                 existingPartial.remove();
             }
@@ -1797,10 +1838,10 @@
             const entry = document.createElement('div');
             entry.className = 'transcript-entry transcript-entry-partial';
             entry.innerHTML = `<span class="transcript-text" style="opacity: 0.7; font-style: italic;">${text}</span>`;
-            transcriptDiv.appendChild(entry);
+            if (transcriptContentDiv) transcriptContentDiv.appendChild(entry);
             
             // Safety check: ensure we never have more than 2 lines (enforce limit after adding)
-            const allEntriesAfter = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            const allEntriesAfter = Array.from(transcriptContentDiv ? transcriptContentDiv.querySelectorAll('.transcript-entry') : []);
             while (allEntriesAfter.length > 2) {
                 const oldest = allEntriesAfter[0];
                 // Clear timeouts
@@ -1830,7 +1871,7 @@
             }
             
             // Auto-scroll to bottom
-            transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+            if (transcriptContentDiv) transcriptContentDiv.scrollTop = transcriptContentDiv.scrollHeight;
             
             currentPartialTranscript = entry;
         }
@@ -1846,8 +1887,8 @@
 
         // Get total character count of all transcript entries
         function getTotalCharacterCount() {
-            if (!transcriptDiv) return 0;
-            const allEntries = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            if (!transcriptContentDiv) return 0;
+            const allEntries = Array.from(transcriptContentDiv.querySelectorAll('.transcript-entry'));
             let totalChars = 0;
             allEntries.forEach(entry => {
                 const text = entry.textContent || entry.innerText || '';
@@ -1888,9 +1929,9 @@
 
         // Ensure total characters never exceed MAX_SUBTITLE_CHARACTERS
         function enforceMaxCharacters() {
-            if (!transcriptDiv) return;
+            if (!transcriptContentDiv) return;
             
-            const allEntries = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            const allEntries = Array.from(transcriptContentDiv.querySelectorAll('.transcript-entry'));
             let totalChars = getTotalCharacterCount();
             
             // Remove oldest entries until we're under the limit
@@ -1923,10 +1964,10 @@
 
         // Maintain maximum of 2 transcript lines total (including partial)
         function maintainMaxTwoLines() {
-            if (!transcriptDiv) return;
+            if (!transcriptContentDiv) return;
             
             // Get ALL transcript entries (both final and partial)
-            const allEntries = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            const allEntries = Array.from(transcriptContentDiv.querySelectorAll('.transcript-entry'));
             
             // If we have 2 or more entries, remove the oldest ones until only 1 remains
             // (so when we add the new one, we'll have exactly 2)
@@ -1967,7 +2008,7 @@
             }
             
             // Check if there are any visible entries
-            const entries = transcriptDiv.querySelectorAll('.transcript-entry');
+            const entries = transcriptContentDiv ? transcriptContentDiv.querySelectorAll('.transcript-entry') : [];
             const hasVisibleContent = Array.from(entries).some(entry => {
                 // Check if entry has any visible text
                 const textContent = entry.textContent.trim();
@@ -2093,10 +2134,10 @@
             });
             
             entry.appendChild(textContainer);
-            transcriptDiv.appendChild(entry);
+            if (transcriptContentDiv) transcriptContentDiv.appendChild(entry);
             
             // Safety check: ensure we never have more than 2 lines (enforce limit after adding)
-            const allEntriesAfter = Array.from(transcriptDiv.querySelectorAll('.transcript-entry'));
+            const allEntriesAfter = Array.from(transcriptContentDiv ? transcriptContentDiv.querySelectorAll('.transcript-entry') : []);
             while (allEntriesAfter.length > 2) {
                 const oldest = allEntriesAfter[0];
                 // Clear timeouts
@@ -2126,7 +2167,7 @@
             }
             
             // Auto-scroll to bottom
-            transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+            if (transcriptContentDiv) transcriptContentDiv.scrollTop = transcriptContentDiv.scrollHeight;
         }
 
         // Stop meeting
@@ -3254,6 +3295,444 @@
                 hideAllViews(true);
             }
         };
+
+        // ========== DRAGGABLE FUNCTIONALITY ==========
+        
+        // Store drag state
+        const dragState = {
+            element: null,
+            offsetX: 0,
+            offsetY: 0,
+            isDragging: false,
+            hasMoved: false, // Track if element was actually moved
+            startX: 0,
+            startY: 0
+        };
+
+        // Save position to localStorage
+        function savePosition(elementId, x, y) {
+            try {
+                const positions = JSON.parse(localStorage.getItem('componentPositions') || '{}');
+                positions[elementId] = { x, y };
+                localStorage.setItem('componentPositions', JSON.stringify(positions));
+            } catch (e) {
+                console.error('Error saving position:', e);
+            }
+        }
+
+        // Load position from localStorage
+        function loadPosition(elementId) {
+            try {
+                const positions = JSON.parse(localStorage.getItem('componentPositions') || '{}');
+                return positions[elementId] || null;
+            } catch (e) {
+                console.error('Error loading position:', e);
+                return null;
+            }
+        }
+
+        // Constrain element within viewport
+        function constrainToViewport(element, x, y) {
+            const rect = element.getBoundingClientRect();
+            const maxX = window.innerWidth - rect.width;
+            const maxY = window.innerHeight - rect.height;
+            
+            x = Math.max(0, Math.min(x, maxX));
+            y = Math.max(0, Math.min(y, maxY));
+            
+            return { x, y };
+        }
+
+        // Apply position to element
+        function applyPosition(element, x, y) {
+            const constrained = constrainToViewport(element, x, y);
+            element.style.left = constrained.x + 'px';
+            element.style.top = constrained.y + 'px';
+            // Preserve any scale/rotation in transform, but remove translate
+            const currentTransform = element.style.transform;
+            if (currentTransform && currentTransform.includes('scale')) {
+                const scaleMatch = currentTransform.match(/scale\([^)]+\)/);
+                element.style.transform = scaleMatch ? scaleMatch[0] : 'none';
+            } else {
+                element.style.transform = 'none';
+            }
+            element.style.right = 'auto';
+            element.style.bottom = 'auto';
+            return constrained;
+        }
+
+        // Initialize drag for an element
+        function makeDraggable(element, dragHandle = null) {
+            if (!element) return;
+            
+            const handle = dragHandle || element;
+            let startX, startY, initialX, initialY;
+            
+            // Restore saved position (only if position was previously saved)
+            const savedPos = loadPosition(element.id);
+            if (savedPos && savedPos.x !== undefined && savedPos.y !== undefined) {
+                // Use setTimeout to ensure element is rendered first
+                setTimeout(() => {
+                    applyPosition(element, savedPos.x, savedPos.y);
+                    // If this is the menu button, update menu panel position
+                    if (element.id === 'menuButton') {
+                        updateMenuPanelPosition();
+                    }
+                }, 0);
+            }
+            
+            // Mouse events
+            handle.addEventListener('mousedown', (e) => {
+                // Allow dragging on the element itself (even if it's a button like menuButton)
+                // Only prevent dragging if clicking on nested interactive elements
+                const isElementItself = e.target === element || e.target === handle;
+                
+                // Don't drag if clicking on nested interactive elements (but allow the element itself)
+                if (!isElementItself) {
+                    if (e.target.tagName === 'BUTTON' || 
+                        e.target.tagName === 'INPUT' || 
+                        e.target.tagName === 'SELECT' ||
+                        e.target.closest('.back-arrow') ||
+                        e.target.closest('.close-button')) {
+                        return;
+                    }
+                    // Check if we're inside a nested button/input/select that's not the element itself
+                    const closestButton = e.target.closest('button');
+                    const closestInput = e.target.closest('input');
+                    const closestSelect = e.target.closest('select');
+                    if ((closestButton && closestButton !== element) ||
+                        (closestInput && closestInput !== element) ||
+                        (closestSelect && closestSelect !== element)) {
+                        return;
+                    }
+                }
+                
+                e.preventDefault();
+                e.stopPropagation(); // Prevent click event from firing
+                dragState.isDragging = true;
+                dragState.element = element;
+                dragState.hasMoved = false; // Reset movement tracking
+                
+                // Get visual position (accounting for any transforms)
+                const rect = element.getBoundingClientRect();
+                startX = e.clientX;
+                startY = e.clientY;
+                dragState.startX = e.clientX;
+                dragState.startY = e.clientY;
+                
+                // Remove transform and set position based on visual rect
+                // This ensures elements with transforms (like translateY(-50%)) work correctly
+                element.style.transition = 'none';
+                element.style.transform = 'none';
+                element.style.left = rect.left + 'px';
+                element.style.top = rect.top + 'px';
+                element.style.right = 'auto';
+                element.style.bottom = 'auto';
+                
+                // Get the actual position after removing transform
+                const newRect = element.getBoundingClientRect();
+                initialX = newRect.left;
+                initialY = newRect.top;
+                
+                document.body.style.userSelect = 'none';
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!dragState.isDragging || dragState.element !== element) return;
+                
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                const newX = initialX + deltaX;
+                const newY = initialY + deltaY;
+                
+                // Track if we've moved significantly (more than 5px)
+                const moveDistance = Math.sqrt(
+                    Math.pow(e.clientX - dragState.startX, 2) + 
+                    Math.pow(e.clientY - dragState.startY, 2)
+                );
+                if (moveDistance > 5) {
+                    dragState.hasMoved = true;
+                }
+                
+                const constrained = applyPosition(element, newX, newY);
+                savePosition(element.id, constrained.x, constrained.y);
+                
+                // Update menu panel position if menu button is being dragged
+                if (element.id === 'menuButton') {
+                    updateMenuPanelPosition();
+                }
+            });
+            
+            document.addEventListener('mouseup', (e) => {
+                if (dragState.isDragging && dragState.element === element) {
+                    // If we actually moved, prevent the click event
+                    if (dragState.hasMoved) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Also prevent click event that might fire after mouseup
+                        const clickHandler = (clickE) => {
+                            clickE.preventDefault();
+                            clickE.stopPropagation();
+                            element.removeEventListener('click', clickHandler, true);
+                        };
+                        element.addEventListener('click', clickHandler, true);
+                        setTimeout(() => {
+                            element.removeEventListener('click', clickHandler, true);
+                        }, 100);
+                    }
+                    
+                    dragState.isDragging = false;
+                    dragState.element = null;
+                    dragState.hasMoved = false;
+                    element.style.transition = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+            
+            // Touch events for mobile
+            handle.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                const target = document.elementFromPoint(touch.clientX, touch.clientY);
+                
+                if (target && (
+                    target.tagName === 'BUTTON' || 
+                    target.tagName === 'INPUT' || 
+                    target.tagName === 'SELECT' ||
+                    target.closest('button') ||
+                    target.closest('input') ||
+                    target.closest('select') ||
+                    target.closest('.back-arrow') ||
+                    target.closest('.close-button')
+                )) {
+                    return;
+                }
+                
+                e.preventDefault();
+                e.stopPropagation(); // Prevent click event from firing
+                dragState.isDragging = true;
+                dragState.element = element;
+                dragState.hasMoved = false; // Reset movement tracking
+                
+                // Get visual position (accounting for any transforms)
+                const rect = element.getBoundingClientRect();
+                startX = touch.clientX;
+                startY = touch.clientY;
+                dragState.startX = touch.clientX;
+                dragState.startY = touch.clientY;
+                
+                // Remove transform and set position based on visual rect
+                // This ensures elements with transforms (like translateY(-50%)) work correctly
+                element.style.transition = 'none';
+                element.style.transform = 'none';
+                element.style.left = rect.left + 'px';
+                element.style.top = rect.top + 'px';
+                element.style.right = 'auto';
+                element.style.bottom = 'auto';
+                
+                // Get the actual position after removing transform
+                const newRect = element.getBoundingClientRect();
+                initialX = newRect.left;
+                initialY = newRect.top;
+            });
+            
+            document.addEventListener('touchmove', (e) => {
+                if (!dragState.isDragging || dragState.element !== element) return;
+                
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - startX;
+                const deltaY = touch.clientY - startY;
+                const newX = initialX + deltaX;
+                const newY = initialY + deltaY;
+                
+                // Track if we've moved significantly (more than 5px)
+                const moveDistance = Math.sqrt(
+                    Math.pow(touch.clientX - dragState.startX, 2) + 
+                    Math.pow(touch.clientY - dragState.startY, 2)
+                );
+                if (moveDistance > 5) {
+                    dragState.hasMoved = true;
+                }
+                
+                const constrained = applyPosition(element, newX, newY);
+                savePosition(element.id, constrained.x, constrained.y);
+                
+                // Update menu panel position if menu button is being dragged
+                if (element.id === 'menuButton') {
+                    updateMenuPanelPosition();
+                }
+            });
+            
+            document.addEventListener('touchend', (e) => {
+                if (dragState.isDragging && dragState.element === element) {
+                    // If we actually moved, prevent the click event
+                    if (dragState.hasMoved) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                    
+                    dragState.isDragging = false;
+                    dragState.element = null;
+                    dragState.hasMoved = false;
+                    element.style.transition = '';
+                }
+            });
+        }
+
+        // Update menu panel position relative to menu button
+        function updateMenuPanelPosition() {
+            const menuButton = document.getElementById('menuButton');
+            const menuPanel = document.getElementById('menuPanel');
+            
+            if (!menuButton || !menuPanel) return;
+            
+            const buttonRect = menuButton.getBoundingClientRect();
+            const buttonCenterY = buttonRect.top + buttonRect.height / 2;
+            const spacing = 40; // Space between button and panel
+            const panelWidth = 50; // Approximate width of the menu panel (icon width)
+            const screenWidth = window.innerWidth;
+            const screenCenter = screenWidth / 2;
+            
+            // Determine if button is on the right or left side of screen
+            const buttonCenterX = buttonRect.left + buttonRect.width / 2;
+            const isOnRightSide = buttonCenterX > screenCenter;
+            
+            // Check available space on each side
+            const spaceOnRight = screenWidth - buttonRect.right;
+            const spaceOnLeft = buttonRect.left;
+            
+            // Decide which side to use based on available space and button position
+            let useLeftSide = false;
+            
+            if (isOnRightSide) {
+                // Button is on right side - prefer left side for panel
+                useLeftSide = true;
+            } else if (spaceOnRight < (panelWidth + spacing)) {
+                // Button is on left but not enough space on right - use left side
+                useLeftSide = true;
+            }
+            
+            if (useLeftSide) {
+                // Position panel to the LEFT of button
+                menuPanel.style.right = (screenWidth - buttonRect.left + spacing) + 'px';
+                menuPanel.style.left = 'auto';
+            } else {
+                // Position panel to the RIGHT of button
+                menuPanel.style.left = (buttonRect.right + spacing) + 'px';
+                menuPanel.style.right = 'auto';
+            }
+            
+            // Calculate menu panel height (icons + gaps)
+            // Each icon is 50px, gap is 16px
+            const iconHeight = 50;
+            const iconGap = 16;
+            // Count visible icons (check both inline styles and computed styles)
+            const allIcons = menuPanel.querySelectorAll('.menu-icon-button');
+            const visibleIcons = Array.from(allIcons).filter(icon => {
+                const style = window.getComputedStyle(icon);
+                return style.display !== 'none' && icon.offsetParent !== null;
+            }).length;
+            const panelHeight = visibleIcons > 0 ? (visibleIcons * iconHeight) + ((visibleIcons - 1) * iconGap) : iconHeight;
+            const panelHalfHeight = panelHeight / 2;
+            
+            const screenHeight = window.innerHeight;
+            const spaceAbove = buttonRect.top;
+            const spaceBelow = screenHeight - buttonRect.bottom;
+            
+            // Calculate ideal centered position
+            let panelTop = buttonCenterY;
+            
+            // Check if panel would go off-screen at the top
+            if (panelTop - panelHalfHeight < 0) {
+                // Position panel at top of screen with padding
+                panelTop = panelHalfHeight + 10; // 10px padding from top
+            }
+            // Check if panel would go off-screen at the bottom
+            else if (panelTop + panelHalfHeight > screenHeight) {
+                // Position panel at bottom of screen with padding
+                panelTop = screenHeight - panelHalfHeight - 10; // 10px padding from bottom
+            }
+            
+            // Apply vertical position
+            menuPanel.style.top = panelTop + 'px';
+            menuPanel.style.transform = 'translateY(-50%)';
+            menuPanel.style.bottom = 'auto';
+        }
+
+        // Initialize all draggable components
+        function initializeDraggables() {
+            // Controls panel - draggable by entire area
+            const controls = document.getElementById('controls');
+            if (controls) makeDraggable(controls);
+            
+            // Transcript - draggable by drag handle only
+            const transcript = document.getElementById('transcript');
+            if (transcript) {
+                const transcriptHandle = transcript.querySelector('.transcript-drag-handle');
+                if (transcriptHandle) {
+                    makeDraggable(transcript, transcriptHandle);
+                } else {
+                    makeDraggable(transcript);
+                }
+            }
+            
+            // Notification - draggable by entire area
+            const notification = document.getElementById('notification');
+            if (notification) makeDraggable(notification);
+            
+            // Task notification - draggable by entire area
+            const taskNotification = document.getElementById('taskNotification');
+            if (taskNotification) makeDraggable(taskNotification);
+            
+            // Menu button - draggable by entire area
+            const menuButton = document.getElementById('menuButton');
+            if (menuButton) {
+                makeDraggable(menuButton);
+                // Update menu panel position when menu button position is restored
+                const savedPos = loadPosition('menuButton');
+                if (savedPos) {
+                    setTimeout(() => {
+                        updateMenuPanelPosition();
+                    }, 100);
+                }
+            }
+            
+            // Menu panel - draggable by entire area
+            const menuPanel = document.getElementById('menuPanel');
+            if (menuPanel) makeDraggable(menuPanel);
+            
+            // All view panels - draggable by header
+            const views = document.querySelectorAll('.view');
+            views.forEach(view => {
+                const header = view.querySelector('.view-header');
+                if (header) {
+                    makeDraggable(view, header);
+                } else {
+                    makeDraggable(view);
+                }
+            });
+        }
+
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                initializeDraggables();
+                // Update menu panel position after initialization
+                setTimeout(() => {
+                    updateMenuPanelPosition();
+                }, 200);
+            });
+        } else {
+            initializeDraggables();
+            // Update menu panel position after initialization
+            setTimeout(() => {
+                updateMenuPanelPosition();
+            }, 200);
+        }
+        
+        // Update menu panel position on window resize
+        window.addEventListener('resize', () => {
+            updateMenuPanelPosition();
+        });
     </script>
 </body>
 </html>
