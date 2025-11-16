@@ -48,6 +48,8 @@
             visibility: visible !important;
             opacity: 1 !important;
             width: fit-content !important;
+            cursor: move;
+            user-select: none;
         }
 
         .ai-toggle-container {
@@ -149,6 +151,8 @@
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
             max-width: 300px;
+            cursor: move;
+            user-select: none;
         }
 
         #notification.show {
@@ -174,11 +178,12 @@
             transform: translateY(20px);
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
-            cursor: pointer;
+            cursor: move;
             max-width: 280px;
             display: flex;
             align-items: center;
             gap: 12px;
+            user-select: none;
         }
 
         #taskNotification.show {
@@ -222,6 +227,15 @@
             font-weight: 500;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(10px);
+            cursor: move;
+            user-select: none;
+        }
+        
+        #transcript .transcript-entry,
+        #transcript .transcript-word,
+        #transcript .transcript-text {
+            user-select: text;
+            cursor: text;
         }
 
         #transcript.hidden {
@@ -297,9 +311,10 @@
             background: rgba(0, 0, 0, 0.6);
             border: none;
             border-radius: 50%;
+            cursor: move;
+            user-select: none;
             color: white;
             font-size: 24px;
-            cursor: pointer;
             z-index: 10001;
             display: flex;
             align-items: center;
@@ -422,10 +437,31 @@
             max-width: calc(100vw - 140px);
             max-height: 80vh;
             overflow-y: auto;
+            cursor: move;
+            user-select: none;
+        }
+        
+        .view .view-header {
+            cursor: move;
+        }
+        
+        .view .view-content,
+        .view .view-header-text,
+        .view button,
+        .view input,
+        .view .task-item,
+        .view .history-item {
+            cursor: default;
+            user-select: text;
+        }
+        
+        .view .view-content {
+            cursor: default;
         }
 
         .view.active {
             display: block;
+            overflow-y: auto;
         }
 
         .view-header {
@@ -1317,6 +1353,218 @@
         const taskNotificationDiv = document.getElementById('taskNotification');
         let notificationTimeout = null;
         let taskNotificationTimeout = null;
+
+        // Drag functionality
+        function makeDraggable(element) {
+            if (!element) {
+                console.warn('makeDraggable: element is null');
+                return;
+            }
+            
+            const isMenuButton = element.id === 'menuButton';
+            const dragThreshold = 5; // pixels to move before considering it a drag
+            let isDragging = false;
+            let hasMoved = false;
+            let startX = null;
+            let startY = null;
+            let initialX = 0;
+            let initialY = 0;
+            
+            const dragMoveHandler = (e) => {
+                if (startX === null || startY === null) return;
+                
+                let clientX, clientY;
+                if (e.type === "touchmove") {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                
+                const moveDeltaX = Math.abs(clientX - startX);
+                const moveDeltaY = Math.abs(clientY - startY);
+                
+                // Check if we've moved enough to consider it a drag
+                if (!isDragging && (moveDeltaX > dragThreshold || moveDeltaY > dragThreshold)) {
+                    isDragging = true;
+                    hasMoved = true;
+                    // Cancel click for menu button if dragging
+                    if (isMenuButton) {
+                        element.dataset.allowClick = 'false';
+                    }
+                }
+                
+                if (!isDragging) return;
+                
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const rect = element.getBoundingClientRect();
+                let newX = clientX - initialX;
+                let newY = clientY - initialY;
+                
+                // Keep element within viewport bounds
+                const maxX = window.innerWidth - rect.width;
+                const maxY = window.innerHeight - rect.height;
+                
+                newX = Math.max(0, Math.min(newX, maxX));
+                newY = Math.max(0, Math.min(newY, maxY));
+                
+                // Update position - remove any transform and use absolute positioning
+                element.style.setProperty('transform', 'none', 'important');
+                element.style.setProperty('top', newY + 'px', 'important');
+                element.style.setProperty('left', newX + 'px', 'important');
+            };
+            
+            const dragEndHandler = (e) => {
+                if (isDragging && hasMoved) {
+                    // Prevent click if we were dragging
+                    if (isMenuButton) {
+                        element.dataset.allowClick = 'false';
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                
+                // Reset
+                isDragging = false;
+                hasMoved = false;
+                startX = null;
+                startY = null;
+                
+                // Remove event listeners
+                document.removeEventListener('mousemove', dragMoveHandler);
+                document.removeEventListener('touchmove', dragMoveHandler);
+                document.removeEventListener('mouseup', dragEndHandler);
+                document.removeEventListener('touchend', dragEndHandler);
+                
+                // Reset menu button flag after a delay
+                if (isMenuButton) {
+                    setTimeout(() => {
+                        delete element.dataset.allowClick;
+                    }, 100);
+                }
+            };
+            
+            const dragStartHandler = (e) => {
+                // For menu button, only allow dragging when menu is closed
+                if (isMenuButton) {
+                    const menuOverlay = document.getElementById('menuOverlay');
+                    if (menuOverlay && menuOverlay.classList.contains('show')) {
+                        // Menu is open, don't allow dragging - let click handler work
+                        return;
+                    }
+                    // Menu is closed, allow dragging
+                } else {
+                    // Don't drag if clicking on interactive elements (except menu button)
+                    if (e.target.tagName === 'BUTTON' || 
+                        e.target.tagName === 'INPUT' || 
+                        e.target.closest('button') || 
+                        e.target.closest('input') ||
+                        e.target.closest('.task-item') ||
+                        e.target.closest('.history-item') ||
+                        e.target.closest('.toggle-switch')) {
+                        return;
+                    }
+                }
+                
+                // Don't drag if clicking on scrollable content areas (allow scrolling)
+                if (e.target.closest('.view-content') || 
+                    e.target.closest('#tasksContent') ||
+                    e.target.closest('#summarizationContent') ||
+                    e.target.closest('#historyContent') ||
+                    e.target.closest('#settingsContent') ||
+                    e.target.closest('#meetingDetailContent') ||
+                    e.target.closest('#taskDetailContent')) {
+                    // Only allow dragging from the header area for views
+                    if (!e.target.closest('.view-header')) {
+                        return;
+                    }
+                }
+                
+                // Get current position from actual rendered position
+                const rect = element.getBoundingClientRect();
+                const currentX = rect.left;
+                const currentY = rect.top;
+                
+                if (e.type === "touchstart") {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                } else {
+                    startX = e.clientX;
+                    startY = e.clientY;
+                }
+                
+                // Calculate offset from mouse position to element position
+                initialX = startX - currentX;
+                initialY = startY - currentY;
+                hasMoved = false;
+                isDragging = false;
+                
+                // For menu button, allow click if not dragging
+                if (isMenuButton) {
+                    element.dataset.allowClick = 'true';
+                }
+                
+                // Add event listeners to document
+                document.addEventListener('mousemove', dragMoveHandler);
+                document.addEventListener('touchmove', dragMoveHandler);
+                document.addEventListener('mouseup', dragEndHandler);
+                document.addEventListener('touchend', dragEndHandler);
+            };
+            
+            element.addEventListener('mousedown', dragStartHandler);
+            element.addEventListener('touchstart', dragStartHandler);
+        }
+        
+        // Make elements draggable - initialize after DOM is ready
+        function initializeDragging() {
+            const controlsDiv = document.getElementById('controls');
+            const menuButtonEl = document.getElementById('menuButton');
+            
+            if (controlsDiv) {
+                makeDraggable(controlsDiv);
+                console.log('✅ Controls made draggable');
+            } else {
+                console.warn('⚠️ Controls div not found');
+            }
+            
+            if (transcriptDiv) {
+                makeDraggable(transcriptDiv);
+                console.log('✅ Transcript made draggable');
+            }
+            
+            if (notificationDiv) {
+                makeDraggable(notificationDiv);
+                console.log('✅ Notification made draggable');
+            }
+            
+            if (taskNotificationDiv) {
+                makeDraggable(taskNotificationDiv);
+                console.log('✅ Task notification made draggable');
+            }
+            
+            if (menuButtonEl) {
+                makeDraggable(menuButtonEl);
+                console.log('✅ Menu button made draggable');
+            } else {
+                console.warn('⚠️ Menu button not found');
+            }
+            
+            // Make all view panels draggable
+            document.querySelectorAll('.view').forEach(view => {
+                makeDraggable(view);
+            });
+            console.log('✅ View panels made draggable');
+        }
+        
+        // Initialize dragging when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeDragging);
+        } else {
+            initializeDragging();
+        }
 
         // Show temporary notification
         function showNotification(message, duration = 3000) {
@@ -2326,8 +2574,15 @@
         const USER_ID = 'default_user'; // Since we only have one user
         const navigationStack = []; // Track navigation history
 
-        // Open/close menu
-        menuButton.addEventListener('click', () => {
+        // Open/close menu - use mousedown with check to allow both click and drag
+        menuButton.addEventListener('click', (e) => {
+            // Don't trigger click if we were dragging
+            if (menuButton.dataset.allowClick === 'false') {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+            
             if (currentView) {
                 // If a component is open, close everything (component and menu)
                 hideAllViews(true); // Clear navigation stack when closing via menu button
@@ -2338,10 +2593,27 @@
                     menuOverlay.classList.remove('show');
                 } else {
                     menuOverlay.classList.add('show');
+                    
+                    // Position menu panel relative to menu button's current position
+                    const menuButtonRect = menuButton.getBoundingClientRect();
+                    const menuButtonCenterY = menuButtonRect.top + menuButtonRect.height / 2;
+                    const menuPanel = document.getElementById('menuPanel');
+                    
+                    if (menuPanel) {
+                        // Position panel to the right of menu button, vertically centered
+                        const panelLeft = menuButtonRect.right + 20; // 20px gap from menu button
+                        const panelTop = menuButtonCenterY;
+                        
+                        menuPanel.style.setProperty('transform', 'translateY(-50%)', 'important');
+                        menuPanel.style.setProperty('top', panelTop + 'px', 'important');
+                        menuPanel.style.setProperty('left', panelLeft + 'px', 'important');
+                    }
+                    
                     updateMenuButtonsVisibility();
                 }
             }
-        });
+            return true;
+        }, true); // Use capture phase to ensure it runs
 
         // Close menu functionality removed - icons now toggle
 
@@ -2396,6 +2668,14 @@
                 buttonElement.classList.add('active');
             }
             currentView = viewElement;
+            
+            // Position view on the right side of the screen (default position)
+            // Reset any custom positioning to use CSS defaults
+            viewElement.style.setProperty('transform', 'translateY(-50%)', 'important');
+            viewElement.style.setProperty('top', '50%', 'important');
+            viewElement.style.setProperty('right', '10px', 'important');
+            viewElement.style.setProperty('left', 'auto', 'important');
+            
             updateBackArrows();
         }
 
