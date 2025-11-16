@@ -18,12 +18,13 @@ This project provides an AR experience for enterprise meetings using Snapchat Sp
 - ✅ Settings page for customization
 
 **Backend (AI Processing):**
-- ✅ Speech-to-Text (STT) processing
-- ✅ Speaker diarization (who said what)
-- ✅ LLM-powered meeting summarization
-- ✅ LLM-powered task extraction
-- ✅ Meeting history storage
-- ✅ Person identification
+- ✅ Speech-to-Text (STT) processing with ElevenLabs
+- ✅ Real-time transcription with WebSocket support
+- ✅ LLM-powered meeting summarization (GPT-4o-mini)
+- ✅ LLM-powered task extraction with due dates
+- ✅ Meeting history storage (Supabase/PostgreSQL)
+- ✅ Person detection endpoints
+- ✅ Audio streaming and processing
 
 ## 📁 Project Structure
 
@@ -116,16 +117,25 @@ python main.py
 ```
 Spectacles (Lens Studio)
     ↓ [Audio/Video Capture]
-    ↓ [HTTP/WebSocket]
+    ↓ [WebSocket/HTTP]
 Backend API (FastAPI)
-    ↓ [STT Processing]
-    ↓ [Speaker Diarization]
-    ↓ [LLM Summarization]
-    ↓ [Task Extraction]
+    ↓ [ElevenLabs STT Processing]
+    ↓ [OpenAI LLM Summarization]
+    ↓ [OpenAI Task Extraction]
     ↓ [Person Detection]
-    ↑ [JSON Response]
+    ↑ [WebSocket Real-time Updates]
 Spectacles (Display UI)
 ```
+
+### Technology Stack
+
+**Backend:**
+- **Framework:** FastAPI (Python 3.11+)
+- **STT:** ElevenLabs Speech-to-Text API (realtime & batch)
+- **LLM:** OpenAI GPT-4o-mini
+- **Database:** Supabase (PostgreSQL)
+- **Real-time:** WebSocket support for live updates
+- **Containerization:** Docker & Docker Compose
 
 ### API Endpoints
 
@@ -138,6 +148,7 @@ Spectacles (Display UI)
 
 **Audio/STT:**
 - `POST /api/audio/stream` - Stream audio for STT processing
+- `WS /ws/audio/{meeting_id}` - WebSocket audio streaming endpoint
 
 **Tasks:**
 - `GET /api/meetings/{id}/tasks` - Get extracted tasks
@@ -145,6 +156,9 @@ Spectacles (Display UI)
 
 **Person Detection:**
 - `POST /api/persons/detect` - Detect and identify person
+
+**WebSocket:**
+- `WS /ws/meetings/{meeting_id}` - Real-time updates (transcript, summary, tasks)
 
 ## 🎮 Features in Detail
 
@@ -154,11 +168,12 @@ Spectacles (Display UI)
 - **Visual Feedback:** Changes appearance based on state
 
 ### 2. Live Captions
-- **Display:** Real-time speech-to-text transcription
+- **Display:** Real-time speech-to-text transcription via ElevenLabs
 - **Features:**
-  - Speaker identification
-  - Translation support (optional)
+  - Real-time partial and committed transcripts
+  - Auto-detected language support
   - Scrollable history
+  - WebSocket-based live updates
 - **Interaction:** Pinch to move, swipe to hide
 
 ### 3. Meeting Summarization
@@ -193,20 +208,19 @@ Spectacles (Display UI)
 
 ### Backend Development
 
-The backend uses FastAPI and includes placeholder endpoints for:
-- STT processing (integrate your STT model)
-- Speaker diarization (integrate diarization model)
-- LLM summarization (integrate OpenAI/Anthropic/etc.)
-- Task extraction (integrate LLM for task detection)
-- Person detection (integrate face recognition model)
+The backend is fully implemented with production-ready services:
 
 **Current Status:**
-- ✅ API structure and endpoints
-- ✅ Meeting session management
-- ⏳ STT integration (TODO)
-- ⏳ Speaker diarization (TODO)
-- ⏳ LLM integration (TODO)
-- ⏳ Person detection (TODO)
+- ✅ FastAPI application with complete API structure
+- ✅ Meeting session management with database persistence
+- ✅ ElevenLabs STT integration (realtime & batch APIs)
+- ✅ OpenAI LLM integration (GPT-4o-mini) for summarization
+- ✅ Task extraction with automatic due date detection
+- ✅ WebSocket support for real-time updates
+- ✅ Supabase/PostgreSQL database integration
+- ✅ Background task processing
+- ✅ Audio streaming and processing pipeline
+- ✅ Person detection endpoints (ready for integration)
 
 ### Lens Studio Development
 
@@ -236,13 +250,32 @@ Once the backend is running, visit:
 
 Create a `.env` file in `backend/`:
 
+**Required:**
 ```env
+# ElevenLabs API key for Speech-to-Text
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+
+# OpenAI API key for LLM (summarization & task extraction)
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**Optional:**
+```env
+# API Configuration
 API_HOST=0.0.0.0
 API_PORT=8000
-# Add your API keys for STT, LLM, etc.
-# OPENAI_API_KEY=your_key_here
-# ANTHROPIC_API_KEY=your_key_here
+
+# Database (Supabase PostgreSQL - recommended)
+# Get connection string from Supabase Dashboard > Settings > Database
+# Use connection pooler (port 6543) for better performance:
+DATABASE_URL=postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+
+# STT Configuration
+STT_LANGUAGE=en  # Optional: force language (en, pt, es, etc.)
+STT_USE_REALTIME=true  # Use realtime API (default: true)
 ```
+
+See `backend/README.md` for detailed environment variable documentation.
 
 ## 🚢 Deployment
 
@@ -294,14 +327,12 @@ curl http://localhost:8000/api/meetings/{meeting_id}/summary
 ## 📝 TODO / Future Development
 
 ### Backend
-- [ ] Integrate STT model (Whisper, Google Speech-to-Text, etc.)
-- [ ] Implement speaker diarization
-- [ ] Integrate LLM for summarization (OpenAI, Anthropic, etc.)
-- [ ] Implement task extraction with LLM
-- [ ] Add person detection/identification
-- [ ] Database integration (replace in-memory storage)
-- [ ] WebSocket support for real-time updates
+- [ ] Enable speaker diarization (currently disabled, infrastructure ready)
+- [ ] Enhanced person detection/identification with face recognition
 - [ ] Authentication and user management
+- [ ] Audio output/TTS for meeting summaries
+- [ ] Multi-language translation support
+- [ ] Meeting analytics and insights
 
 ### Lens Studio
 - [ ] Complete UI element implementation
@@ -310,6 +341,7 @@ curl http://localhost:8000/api/meetings/{meeting_id}/summary
 - [ ] Settings page UI
 - [ ] Visual polish and animations
 - [ ] Performance optimization
+- [ ] Offline mode support
 
 ## 🐛 Troubleshooting
 
@@ -317,6 +349,9 @@ curl http://localhost:8000/api/meetings/{meeting_id}/summary
 - **Port 8000 already in use:** Change port in `docker-compose.yml` or `main.py`
 - **CORS errors:** Backend allows all origins by default
 - **Docker build fails:** Ensure Docker is running and has sufficient resources
+- **Missing API keys:** Ensure `ELEVENLABS_API_KEY` and `OPENAI_API_KEY` are set in `.env` file
+- **Database connection fails:** Check `DATABASE_URL` is correct (optional, works without DB)
+- **STT not working:** Verify ElevenLabs API key is valid and has sufficient credits
 
 ### Lens Studio Issues
 - **API connection fails:** Check backend is running and URL is correct
