@@ -3040,15 +3040,24 @@
                 const preferredLanguage = settings.preferred_language || '';
                 const spokenLanguages = settings.spoken_languages || [];
 
-                // Load subtitles preference from localStorage (default to true)
-                const subtitlesEnabled = localStorage.getItem('subtitlesEnabled') !== 'false';
+                // Load subtitles preference from database, fallback to localStorage (default to true)
+                const subtitlesEnabled = settings.subtitles_enabled !== undefined 
+                    ? settings.subtitles_enabled 
+                    : (localStorage.getItem('subtitlesEnabled') !== 'false');
+                
+                // Sync to localStorage for backward compatibility
+                localStorage.setItem('subtitlesEnabled', subtitlesEnabled);
 
                 content.innerHTML = `
                     <form class="settings-form" onsubmit="saveSettings(event)">
                         <div class="settings-field">
-                            <button type="button" class="subtitles-toggle-button" onclick="toggleSubtitlesButton()">
-                                ${subtitlesEnabled ? 'Turn off Subtitles' : 'Turn on Subtitles'}
-                            </button>
+                            <label style="display: flex; align-items: center; gap: 12px; color: white; font-size: 16px; font-weight: 500;">
+                                <span>Subtitles</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="subtitlesToggle" ${subtitlesEnabled ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </label>
                         </div>
                         <div class="settings-field">
                             <label>Preferred Language</label>
@@ -3094,6 +3103,14 @@
                         <button type="submit" class="save-button">Save Settings</button>
                     </form>
                 `;
+                
+                // Add event listener for subtitles toggle
+                const subtitlesToggle = document.getElementById('subtitlesToggle');
+                if (subtitlesToggle) {
+                    subtitlesToggle.addEventListener('change', (e) => {
+                        handleSubtitlesToggle(e.target.checked);
+                    });
+                }
             } catch (error) {
                 console.error('Error loading settings:', error);
                 content.innerHTML = '<div class="empty-state">Error loading settings</div>';
@@ -3139,29 +3156,33 @@
             return localStorage.getItem('subtitlesEnabled') !== 'false';
         }
 
-        // Toggle subtitles button
-        window.toggleSubtitlesButton = function() {
-            const currentState = areSubtitlesEnabled();
-            const newState = !currentState;
+        // Toggle subtitles (handles checkbox change)
+        async function handleSubtitlesToggle(enabled) {
+            // Save preference to localStorage for immediate access
+            localStorage.setItem('subtitlesEnabled', enabled);
             
-            // Save preference to localStorage
-            localStorage.setItem('subtitlesEnabled', newState);
-            
-            // Update button text
-            const button = document.querySelector('.subtitles-toggle-button');
-            if (button) {
-                button.textContent = newState ? 'Turn off Subtitles' : 'Turn on Subtitles';
+            // Also save to database
+            try {
+                await fetch(`${BACKEND_URL}/api/settings/${USER_ID}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        subtitles_enabled: enabled
+                    })
+                });
+            } catch (error) {
+                console.error('Error saving subtitles preference:', error);
             }
             
             // Apply the preference - only hide if disabled, don't force show if enabled
             // (let the existing content-based logic handle showing)
             const transcriptDiv = document.getElementById('transcript');
-            if (transcriptDiv && !newState) {
+            if (transcriptDiv && !enabled) {
                 // If disabling, hide immediately
                 transcriptDiv.classList.add('hidden');
             }
             // If enabling, don't force show - let content-based logic handle it
-        };
+        }
 
         // Apply subtitles preference on page load
         function applySubtitlesPreference() {
@@ -3182,6 +3203,8 @@
             const spokenLanguages = Array.from(tags.querySelectorAll('.language-tag')).map(tag => 
                 tag.textContent.trim().split('×')[0].trim()
             );
+            const subtitlesToggle = document.getElementById('subtitlesToggle');
+            const subtitlesEnabled = subtitlesToggle ? subtitlesToggle.checked : true;
 
             try {
                 const response = await fetch(`${BACKEND_URL}/api/settings/${USER_ID}`, {
@@ -3189,7 +3212,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         preferred_language: preferredLanguage || null,
-                        spoken_languages: spokenLanguages
+                        spoken_languages: spokenLanguages,
+                        subtitles_enabled: subtitlesEnabled
                     })
                 });
 

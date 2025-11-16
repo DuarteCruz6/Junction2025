@@ -100,6 +100,7 @@ class UserSettings(Base):
     user_id = Column(String, nullable=False, unique=True, index=True)  # User identifier
     spoken_languages = Column(JSON, default=list)  # Array of language codes (e.g., ["en", "pt", "es"])
     preferred_language = Column(String, nullable=True)  # Preferred language code (e.g., "en")
+    subtitles_enabled = Column(Boolean, default=True)  # Whether subtitles are enabled
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

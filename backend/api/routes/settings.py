@@ -19,6 +19,7 @@ class SettingsUpdate(BaseModel):
     """Settings update model"""
     spoken_languages: Optional[List[str]] = None
     preferred_language: Optional[str] = None
+    subtitles_enabled: Optional[bool] = None
 
 
 class SettingsResponse(BaseModel):
@@ -27,6 +28,7 @@ class SettingsResponse(BaseModel):
     user_id: str
     spoken_languages: List[str]
     preferred_language: Optional[str]
+    subtitles_enabled: bool
     created_at: datetime
     updated_at: datetime
 
@@ -43,6 +45,7 @@ async def get_settings(user_id: str, db: Session = Depends(get_db)):
             "user_id": user_id,
             "spoken_languages": [],
             "preferred_language": None,
+            "subtitles_enabled": True,
             "created_at": None,
             "updated_at": None,
         })
@@ -52,6 +55,7 @@ async def get_settings(user_id: str, db: Session = Depends(get_db)):
         "user_id": settings.user_id,
         "spoken_languages": settings.spoken_languages or [],
         "preferred_language": settings.preferred_language,
+        "subtitles_enabled": settings.subtitles_enabled if settings.subtitles_enabled is not None else True,
         "created_at": settings.created_at.isoformat() if settings.created_at else None,
         "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
     })
@@ -73,6 +77,7 @@ async def update_settings(
             user_id=user_id,
             spoken_languages=settings_update.spoken_languages or [],
             preferred_language=settings_update.preferred_language,
+            subtitles_enabled=settings_update.subtitles_enabled if settings_update.subtitles_enabled is not None else True,
         )
         db.add(settings)
     else:
@@ -81,6 +86,8 @@ async def update_settings(
             settings.spoken_languages = settings_update.spoken_languages
         if settings_update.preferred_language is not None:
             settings.preferred_language = settings_update.preferred_language
+        if settings_update.subtitles_enabled is not None:
+            settings.subtitles_enabled = settings_update.subtitles_enabled
         settings.updated_at = datetime.utcnow()
     
     try:
@@ -92,6 +99,7 @@ async def update_settings(
             "user_id": settings.user_id,
             "spoken_languages": settings.spoken_languages or [],
             "preferred_language": settings.preferred_language,
+            "subtitles_enabled": settings.subtitles_enabled if settings.subtitles_enabled is not None else True,
             "created_at": settings.created_at.isoformat() if settings.created_at else None,
             "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
         })

@@ -1,9 +1,10 @@
 """
 Database Migration Script
 Updates the database schema to match the current models:
-1. Removes 'title' column from 'meetings' table if it exists
+1. Adds 'title' column to 'meetings' table if it doesn't exist
 2. Adds 'title' column to 'tasks' table if it doesn't exist
 3. Drops 'meeting_speakers' table if it exists
+4. Adds 'subtitles_enabled' column to 'user_settings' table if it doesn't exist
 """
 
 import sys
@@ -66,8 +67,22 @@ def migrate_database():
             else:
                 print("   ✅ 'meeting_speakers' table doesn't exist (nothing to drop)")
             
-            # 4. Ensure all other tables are up to date
-            print("\n4. Ensuring all tables are up to date...")
+            # 4. Add 'subtitles_enabled' column to 'user_settings' table if it doesn't exist
+            print("\n4. Checking 'user_settings' table...")
+            if 'user_settings' in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns('user_settings')]
+                if 'subtitles_enabled' not in columns:
+                    print("   ➕ Adding 'subtitles_enabled' column to 'user_settings' table...")
+                    conn.execute(text("ALTER TABLE user_settings ADD COLUMN subtitles_enabled BOOLEAN DEFAULT TRUE"))
+                    conn.commit()
+                    print("   ✅ 'subtitles_enabled' column added successfully")
+                else:
+                    print("   ✅ 'subtitles_enabled' column already exists")
+            else:
+                print("   ⚠️  'user_settings' table doesn't exist (will be created on next startup)")
+            
+            # 5. Ensure all other tables are up to date
+            print("\n5. Ensuring all tables are up to date...")
             Base.metadata.create_all(bind=engine)
             print("   ✅ All tables are up to date")
             
