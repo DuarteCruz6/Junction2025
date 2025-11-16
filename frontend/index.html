@@ -1917,6 +1917,7 @@
                 });
 
                 videoElement.srcObject = localStream;
+                videoElement.muted = true; // Prevent microphone audio from playing through speakers
                 // Camera and microphone ready - no notification needed
 
             } catch (error) {
@@ -1928,6 +1929,7 @@
                     try {
                         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                         videoElement.srcObject = localStream;
+                        videoElement.muted = true; // Prevent microphone audio from playing through speakers
                         // Camera and microphone ready - no notification needed
                     } catch (err) {
                         console.error('Could not access camera or microphone:', err);
