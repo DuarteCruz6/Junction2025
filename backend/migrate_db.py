@@ -78,11 +78,38 @@ def migrate_database():
                     print("   ✅ 'subtitles_enabled' column added successfully")
                 else:
                     print("   ✅ 'subtitles_enabled' column already exists")
+                
+                # Add 'font_size' column if it doesn't exist
+                if 'font_size' not in columns:
+                    print("   ➕ Adding 'font_size' column to 'user_settings' table...")
+                    conn.execute(text("ALTER TABLE user_settings ADD COLUMN font_size VARCHAR DEFAULT 'medium'"))
+                    conn.commit()
+                    print("   ✅ 'font_size' column added successfully")
+                else:
+                    print("   ✅ 'font_size' column already exists")
+                
+                # Add 'screen_reader_enabled' column if it doesn't exist
+                if 'screen_reader_enabled' not in columns:
+                    print("   ➕ Adding 'screen_reader_enabled' column to 'user_settings' table...")
+                    conn.execute(text("ALTER TABLE user_settings ADD COLUMN screen_reader_enabled BOOLEAN DEFAULT FALSE"))
+                    conn.commit()
+                    print("   ✅ 'screen_reader_enabled' column added successfully")
+                else:
+                    print("   ✅ 'screen_reader_enabled' column already exists")
             else:
                 print("   ⚠️  'user_settings' table doesn't exist (will be created on next startup)")
             
-            # 5. Ensure all other tables are up to date
-            print("\n5. Ensuring all tables are up to date...")
+            # 5. Check if 'reminders' table exists, create if not
+            print("\n5. Checking 'reminders' table...")
+            if 'reminders' not in inspector.get_table_names():
+                print("   ➕ Creating 'reminders' table...")
+                Base.metadata.create_all(bind=engine)
+                print("   ✅ 'reminders' table created successfully")
+            else:
+                print("   ✅ 'reminders' table already exists")
+            
+            # 6. Ensure all other tables are up to date
+            print("\n6. Ensuring all tables are up to date...")
             Base.metadata.create_all(bind=engine)
             print("   ✅ All tables are up to date")
             

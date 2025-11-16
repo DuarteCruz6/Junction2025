@@ -17,7 +17,7 @@ from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, 
 # DISABLED: speaker functions (no diarization, no need for speakers)
 # from utils.db_helpers import get_meeting_speakers, get_speakers_for_meetings_batch
 from utils.storage import meetings_db, audio_streams, background_tasks
-from services.background_tasks import process_summary_update, process_task_extraction, process_batch_diarization
+from services.background_tasks import process_summary_update, process_task_extraction, process_reminder_extraction, process_batch_diarization
 from models.database import Task, SessionLocal
 
 router = APIRouter()
@@ -43,11 +43,13 @@ async def start_meeting():
     # Start background tasks
     summary_task = asyncio.create_task(process_summary_update(meeting_id))
     task_extraction_task = asyncio.create_task(process_task_extraction(meeting_id))
+    reminder_extraction_task = asyncio.create_task(process_reminder_extraction(meeting_id))
     # DISABLED: Batch diarization on stand-by (keeping for later)
     # batch_diarization_task = asyncio.create_task(process_batch_diarization(meeting_id))
     background_tasks[meeting_id] = {
         "summary": summary_task,
         "task_extraction": task_extraction_task,
+        "reminder_extraction": reminder_extraction_task,
         # "batch_diarization": batch_diarization_task,
     }
     

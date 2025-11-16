@@ -308,6 +308,166 @@ JSON:"""
                 "tasks": [],
             }
     
+    async def extract_reminders(
+        self,
+        transcript: List[Dict[str, Any]],
+        existing_reminders: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract reminders from family call transcript (for elderly care)
+        
+        Args:
+            transcript: List of transcript segments
+            existing_reminders: Previously extracted reminders to avoid duplicates
+            
+        Returns:
+            Dict with extracted reminders
+        """
+        try:
+            # Format transcript
+            transcript_text = self._format_transcript(transcript)
+            
+            # Format existing reminders if any
+            existing_reminders_text = ""
+            if existing_reminders:
+                existing_reminders_text = "\n\nExisting Reminders:\n"
+                for reminder in existing_reminders:
+                    existing_reminders_text += f"- {reminder.get('description', '')}\n"
+            
+            # Build prompt for reminder extraction
+            prompt = f"""You are an assistant helping elderly people remember important things from family calls. Extract reminders, appointments, and things to remember from this conversation.
+
+Transcript:
+{transcript_text}
+{existing_reminders_text}
+
+Extract all reminders, appointments, and things to remember mentioned in the conversation. For each reminder, identify:
+1. The reminder description (required) - what they need to remember
+2. A brief title for the reminder (if not clear, derive from description)
+3. When to be reminded - date and/or time if mentioned (otherwise null)
+4. Whether it's recurring (daily, weekly, monthly, etc.) - if mentioned
+5. Priority level (high/medium/low based on importance)
+
+Examples of reminders:
+- "Call the doctor tomorrow at 2pm" → reminder_date: tomorrow, reminder_time: "14:00", priority: high
+- "Take medication every morning" → is_recurring: true, recurrence_pattern: "daily", priority: high
+- "Visit mom next week" → reminder_date: next week, priority: medium
+- "Don't forget the appointment on Friday" → reminder_date: Friday, priority: high
+
+Return ONLY a JSON object with a 'reminders' array in this format:
+{{
+  "reminders": [
+    {{
+      "title": "Reminder title or short description",
+      "description": "Full reminder description",
+      "reminder_date": "Date string in ISO format (YYYY-MM-DD) or null",
+      "reminder_time": "Time string in HH:MM format (24-hour) or null",
+      "is_recurring": true/false,
+      "recurrence_pattern": "daily/weekly/monthly or null",
+      "priority": "high/medium/low"
+    }}
+  ]
+}}
+
+Important:
+- Return only valid JSON object with a 'reminders' key containing an array
+- If no reminders are found, return {{"reminders": []}}
+- Be thorough but avoid duplicates
+- Extract implicit reminders (e.g., "we should do this later" becomes a reminder)
+- Set priority based on importance (medical appointments = high, casual mentions = low)
+- For dates, try to infer from context (today, tomorrow, next week, specific dates)
+
+JSON:"""
+            
+            # Call LLM
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a reminder extraction assistant for elderly care. Always return valid JSON with a 'reminders' array."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,  # Very low temperature for structured output
+                response_format={"type": "json_object"},  # Force JSON response
+            )
+            
+            import json
+            response_text = response.choices[0].message.content
+            
+            # Parse JSON response
+            try:
+                # Try to extract JSON from response
+                if response_text.startswith("```json"):
+                    response_text = response_text.replace("```json", "").replace("```", "").strip()
+                elif response_text.startswith("```"):
+                    response_text = response_text.replace("```", "").strip()
+                
+                reminders_data = json.loads(response_text)
+                
+                # Handle both {"reminders": [...]} and [...] formats
+                if isinstance(reminders_data, dict) and "reminders" in reminders_data:
+                    reminders = reminders_data["reminders"]
+                elif isinstance(reminders_data, list):
+                    reminders = reminders_data
+                else:
+                    reminders = []
+                
+                # Validate and clean reminders
+                validated_reminders = []
+                for reminder in reminders:
+                    # Ensure required fields
+                    if not reminder.get("description"):
+                        continue  # Skip reminders without description
+                    
+                    validated_reminder = {
+                        "title": reminder.get("title") or reminder.get("description", "")[:50],
+                        "description": reminder.get("description", ""),
+                        "reminder_date": reminder.get("reminder_date") if reminder.get("reminder_date") else None,
+                        "reminder_time": reminder.get("reminder_time") if reminder.get("reminder_time") else None,
+                        "is_recurring": reminder.get("is_recurring", False),
+                        "recurrence_pattern": reminder.get("recurrence_pattern") if reminder.get("recurrence_pattern") else None,
+                        "priority": reminder.get("priority", "medium").lower(),
+                    }
+                    
+                    # Validate priority
+                    if validated_reminder["priority"] not in ["high", "medium", "low"]:
+                        validated_reminder["priority"] = "medium"
+                    
+                    # Validate recurrence pattern
+                    if validated_reminder["is_recurring"] and validated_reminder["recurrence_pattern"]:
+                        if validated_reminder["recurrence_pattern"] not in ["daily", "weekly", "monthly"]:
+                            validated_reminder["recurrence_pattern"] = None
+                    
+                    validated_reminders.append(validated_reminder)
+                
+                # Filter out duplicates if existing_reminders provided
+                if existing_reminders:
+                    existing_descriptions = {r.get("description", "").lower() for r in existing_reminders}
+                    validated_reminders = [r for r in validated_reminders if r.get("description", "").lower() not in existing_descriptions]
+                
+                print(f"[LLM] [OpenAI] ✅ Extracted {len(validated_reminders)} reminders", flush=True)
+                
+                return {
+                    "success": True,
+                    "reminders": validated_reminders,
+                    "count": len(validated_reminders),
+                }
+                
+            except json.JSONDecodeError:
+                # Fallback: try to extract reminders from text
+                return {
+                    "success": False,
+                    "error": "Failed to parse JSON response",
+                    "reminders": [],
+                    "raw_response": response_text,
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "reminders": [],
+            }
+    
     def _format_transcript(self, transcript: List[Dict[str, Any]]) -> str:
         """Format transcript segments into readable text (without speaker information)"""
         formatted = []

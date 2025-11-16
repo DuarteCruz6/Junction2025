@@ -98,6 +98,17 @@ class WebSocketManager:
             }
         }
         await self.broadcast_to_meeting(meeting_id, update_message)
+    
+    async def send_reminders_update(self, meeting_id: str, reminders: list):
+        """Send reminders update to meeting participants"""
+        message = {
+            "type": "reminders_update",
+            "data": {
+                "reminders": reminders,
+                "timestamp": str(datetime.utcnow())
+            }
+        }
+        await self.broadcast_to_meeting(meeting_id, message)
 
 
 # Singleton instance

@@ -20,6 +20,8 @@ class SettingsUpdate(BaseModel):
     spoken_languages: Optional[List[str]] = None
     preferred_language: Optional[str] = None
     subtitles_enabled: Optional[bool] = None
+    font_size: Optional[str] = None  # "small", "medium", "large", "xlarge"
+    screen_reader_enabled: Optional[bool] = None
 
 
 class SettingsResponse(BaseModel):
@@ -29,6 +31,8 @@ class SettingsResponse(BaseModel):
     spoken_languages: List[str]
     preferred_language: Optional[str]
     subtitles_enabled: bool
+    font_size: str
+    screen_reader_enabled: bool
     created_at: datetime
     updated_at: datetime
 
@@ -46,6 +50,8 @@ async def get_settings(user_id: str, db: Session = Depends(get_db)):
             "spoken_languages": [],
             "preferred_language": None,
             "subtitles_enabled": True,
+            "font_size": "medium",
+            "screen_reader_enabled": False,
             "created_at": None,
             "updated_at": None,
         })
@@ -56,6 +62,8 @@ async def get_settings(user_id: str, db: Session = Depends(get_db)):
         "spoken_languages": settings.spoken_languages or [],
         "preferred_language": settings.preferred_language,
         "subtitles_enabled": settings.subtitles_enabled if settings.subtitles_enabled is not None else True,
+        "font_size": settings.font_size if settings.font_size else "medium",
+        "screen_reader_enabled": settings.screen_reader_enabled if settings.screen_reader_enabled is not None else False,
         "created_at": settings.created_at.isoformat() if settings.created_at else None,
         "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
     })
@@ -78,6 +86,8 @@ async def update_settings(
             spoken_languages=settings_update.spoken_languages or [],
             preferred_language=settings_update.preferred_language,
             subtitles_enabled=settings_update.subtitles_enabled if settings_update.subtitles_enabled is not None else True,
+            font_size=settings_update.font_size if settings_update.font_size else "medium",
+            screen_reader_enabled=settings_update.screen_reader_enabled if settings_update.screen_reader_enabled is not None else False,
         )
         db.add(settings)
     else:
@@ -88,6 +98,10 @@ async def update_settings(
             settings.preferred_language = settings_update.preferred_language
         if settings_update.subtitles_enabled is not None:
             settings.subtitles_enabled = settings_update.subtitles_enabled
+        if settings_update.font_size is not None:
+            settings.font_size = settings_update.font_size
+        if settings_update.screen_reader_enabled is not None:
+            settings.screen_reader_enabled = settings_update.screen_reader_enabled
         settings.updated_at = datetime.utcnow()
     
     try:
@@ -100,6 +114,8 @@ async def update_settings(
             "spoken_languages": settings.spoken_languages or [],
             "preferred_language": settings.preferred_language,
             "subtitles_enabled": settings.subtitles_enabled if settings.subtitles_enabled is not None else True,
+            "font_size": settings.font_size if settings.font_size else "medium",
+            "screen_reader_enabled": settings.screen_reader_enabled if settings.screen_reader_enabled is not None else False,
             "created_at": settings.created_at.isoformat() if settings.created_at else None,
             "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
         })

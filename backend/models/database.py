@@ -92,6 +92,24 @@ class Task(Base):
 #     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Reminder(Base):
+    """Reminder model for elderly care - extracted from family calls"""
+    __tablename__ = "reminders"
+    
+    id = Column(String, primary_key=True)
+    meeting_id = Column(String, nullable=False, index=True)  # Reference to call/meeting
+    title = Column(String, nullable=True)  # Reminder title
+    description = Column(Text, nullable=False)  # What to remember
+    reminder_date = Column(DateTime, nullable=True)  # When to be reminded
+    reminder_time = Column(String, nullable=True)  # Specific time (e.g., "09:00")
+    is_recurring = Column(Boolean, default=False)  # Is this a recurring reminder?
+    recurrence_pattern = Column(String, nullable=True)  # "daily", "weekly", "monthly", etc.
+    status = Column(String, default="active")  # active, completed, dismissed
+    priority = Column(String, default="medium")  # high, medium, low
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class UserSettings(Base):
     """User settings model"""
     __tablename__ = "user_settings"
@@ -101,6 +119,8 @@ class UserSettings(Base):
     spoken_languages = Column(JSON, default=list)  # Array of language codes (e.g., ["en", "pt", "es"])
     preferred_language = Column(String, nullable=True)  # Preferred language code (e.g., "en")
     subtitles_enabled = Column(Boolean, default=True)  # Whether subtitles are enabled
+    font_size = Column(String, default="medium")  # Font size: "small", "medium", "large", "xlarge"
+    screen_reader_enabled = Column(Boolean, default=False)  # Screen reader support
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

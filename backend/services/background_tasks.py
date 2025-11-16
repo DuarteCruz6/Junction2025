@@ -11,6 +11,7 @@ from services.stt_service import stt_service
 from services.websocket_manager import websocket_manager
 from utils.storage import meetings_db
 from utils.db_helpers import save_meeting_to_db, merge_diarized_transcripts, get_meeting_from_db_or_memory
+from models.database import Reminder, SessionLocal
 
 
 async def process_summary_update(meeting_id: str):
@@ -130,6 +131,145 @@ async def process_task_extraction(meeting_id: str):
             
         except Exception as e:
             print(f"Error in task extraction task for {meeting_id}: {e}")
+            await asyncio.sleep(60)
+
+
+async def process_reminder_extraction(meeting_id: str):
+    """Background task to periodically extract reminders from family calls (for elderly care)"""
+    print(f"[Background] [Reminders] 🚀 Starting reminder extraction task for meeting {meeting_id}", flush=True)
+    
+    while True:
+        try:
+            # Try to get meeting from memory first, then database
+            meeting = meetings_db.get(meeting_id)
+            if not meeting:
+                meeting = get_meeting_from_db_or_memory(meeting_id)
+                if meeting:
+                    meetings_db[meeting_id] = meeting
+            
+            # Check if meeting exists and is active
+            if not meeting:
+                print(f"[Background] [Reminders] ⚠️  Meeting {meeting_id} not found, stopping task", flush=True)
+                break
+            
+            if meeting.get("status") != "active":
+                print(f"[Background] [Reminders] ⏸️  Meeting {meeting_id} is not active (status: {meeting.get('status')}), stopping task", flush=True)
+                break
+            
+            transcript = meeting.get("transcript", [])
+            
+            # Get existing reminders from database
+            existing_reminders = []
+            if SessionLocal:
+                try:
+                    db = SessionLocal()
+                    reminders_from_db = db.query(Reminder).filter(Reminder.meeting_id == meeting_id).all()
+                    for reminder in reminders_from_db:
+                        existing_reminders.append({
+                            "description": reminder.description,
+                            "title": reminder.title,
+                        })
+                    db.close()
+                except Exception as e:
+                    print(f"[Background] [Reminders] Error getting existing reminders: {e}")
+                    if 'db' in locals():
+                        db.close()
+            
+            # Only extract if we have transcript segments
+            if len(transcript) >= 5:  # Need some content to extract reminders
+                print(f"[Background] [Reminders] 🔄 Extracting reminders for meeting {meeting_id} ({len(transcript)} transcript segments)", flush=True)
+                
+                result = await llm_service.extract_reminders(
+                    transcript=transcript,
+                    existing_reminders=existing_reminders
+                )
+                
+                if result["success"] and result["reminders"]:
+                    # Save new reminders to database
+                    new_reminders = []
+                    for reminder in result["reminders"]:
+                        reminder_id = str(uuid.uuid4())
+                        
+                        # Parse reminder_date if provided as string
+                        reminder_date = None
+                        if reminder.get("reminder_date"):
+                            try:
+                                from datetime import datetime
+                                # Try ISO format first
+                                reminder_date = datetime.fromisoformat(reminder["reminder_date"].replace("Z", "+00:00"))
+                            except Exception:
+                                try:
+                                    # Try common date formats
+                                    from datetime import datetime
+                                    for fmt in ["%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+                                        try:
+                                            reminder_date = datetime.strptime(reminder["reminder_date"], fmt)
+                                            break
+                                        except ValueError:
+                                            continue
+                                    if reminder_date is None:
+                                        print(f"[Background] [Reminders] Could not parse reminder_date: {reminder['reminder_date']}")
+                                except Exception as e:
+                                    print(f"[Background] [Reminders] Error parsing reminder_date: {e}")
+                        
+                        reminder_data = {
+                            "reminder_id": reminder_id,
+                            "title": reminder.get("title"),
+                            "description": reminder.get("description", ""),
+                            "reminder_date": reminder_date,
+                            "reminder_time": reminder.get("reminder_time"),
+                            "is_recurring": reminder.get("is_recurring", False),
+                            "recurrence_pattern": reminder.get("recurrence_pattern"),
+                            "status": "active",
+                            "priority": reminder.get("priority", "medium"),
+                            "created_at": datetime.now().isoformat(),
+                        }
+                        
+                        # Save to database
+                        if SessionLocal:
+                            try:
+                                db = SessionLocal()
+                                db_reminder = Reminder(
+                                    id=reminder_id,
+                                    meeting_id=meeting_id,
+                                    title=reminder_data["title"],
+                                    description=reminder_data["description"],
+                                    reminder_date=reminder_date,
+                                    reminder_time=reminder_data["reminder_time"],
+                                    is_recurring=reminder_data["is_recurring"],
+                                    recurrence_pattern=reminder_data["recurrence_pattern"],
+                                    status="active",
+                                    priority=reminder_data["priority"],
+                                )
+                                db.add(db_reminder)
+                                db.commit()
+                                db.refresh(db_reminder)
+                                db.close()
+                            except Exception as e:
+                                print(f"[Background] [Reminders] Error saving reminder to database: {e}")
+                                if 'db' in locals():
+                                    db.rollback()
+                                    db.close()
+                        
+                        new_reminders.append(reminder_data)
+                    
+                    # Broadcast update via WebSocket
+                    await websocket_manager.send_reminders_update(
+                        meeting_id=meeting_id,
+                        reminders=new_reminders
+                    )
+                    print(f"[Background] [Reminders] ✅ Extracted {len(new_reminders)} reminders for meeting {meeting_id}", flush=True)
+                elif not result["success"]:
+                    error = result.get("error", "Unknown error")
+                    print(f"[Background] [Reminders] ❌ Failed to extract reminders for meeting {meeting_id}: {error}", flush=True)
+            
+            # Wait 60 seconds before next extraction
+            await asyncio.sleep(60)
+            
+        except Exception as e:
+            print(f"[Background] [Reminders] ❌ Error in reminder extraction task for {meeting_id}: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
             await asyncio.sleep(60)
 
 

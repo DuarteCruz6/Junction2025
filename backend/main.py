@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 print("📦 Importing route routers...")
 # Import route routers
-from api.routes import health, meetings, audio, tasks, persons, settings
+from api.routes import health, meetings, audio, tasks, persons, settings, reminders
 # DISABLED: speakers router (no diarization, no need for speakers)
 # from api.routes import speakers
 print("✅ Route routers imported")
@@ -61,6 +61,7 @@ app.include_router(health.router)
 app.include_router(meetings.router)
 app.include_router(audio.router)
 app.include_router(tasks.router)
+app.include_router(reminders.router)
 # DISABLED: speakers router (no diarization, no need for speakers)
 # app.include_router(speakers.router)
 app.include_router(persons.router)
