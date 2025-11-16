@@ -7,7 +7,9 @@ from typing import Optional, Dict, List
 
 # Import database models
 try:
-    from models.database import Meeting, Speaker, SessionLocal
+    from models.database import Meeting, SessionLocal
+    # DISABLED: Speaker import (no diarization, no need for speakers)
+    # from models.database import Speaker
     import uuid
     DB_AVAILABLE = True
 except Exception as e:
@@ -54,39 +56,44 @@ def get_meeting_from_db_or_memory(meeting_id: str) -> Optional[Dict]:
     return meetings_db.get(meeting_id)
 
 
-def _extract_and_link_speakers(meeting_id: str, transcript: List[Dict], db):
-    """Extract unique speakers from transcript and create/update speaker records"""
-    if not transcript:
-        return
-    
-    # Extract unique speaker names from transcript
-    speaker_names = set()
-    for segment in transcript:
-        speaker_name = segment.get("speaker", "Unknown")
-        if speaker_name and speaker_name != "Unknown":
-            speaker_names.add(speaker_name)
-    
-    if not speaker_names:
-        return  # No speakers to process
-    
-    print(f"[DB] Extracting speakers for meeting {meeting_id}: {speaker_names}")
-    
-    # Process each speaker - just ensure they exist in the database
-    for speaker_name in speaker_names:
-        # Find or create speaker
-        speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
-        if not speaker:
-            # Create new speaker (unknown user for now)
-            speaker = Speaker(
-                id=str(uuid.uuid4()),
-                name=speaker_name,
-                audio_reference=None,  # No audio reference for auto-detected speakers
-            )
-            db.add(speaker)
-            db.flush()  # Flush to get the speaker ID
-            print(f"[DB] Created new speaker: {speaker_name} (ID: {speaker.id})")
-        else:
-            print(f"[DB] Found existing speaker: {speaker_name} (ID: {speaker.id})")
+# DISABLED: Speaker extraction (no diarization, no need for speakers)
+# def _extract_and_link_speakers(meeting_id: str, transcript: List[Dict], db):
+#     """Extract unique speakers from transcript JSON and create/update speaker records
+#     
+#     Reads speaker information directly from the transcript JSON (each segment has a 'speaker' field)
+#     and ensures speaker records exist in the database. No diarization is used.
+#     """
+#     if not transcript:
+#         return
+#     
+#     # Extract unique speaker names from transcript JSON (each segment has a 'speaker' field)
+#     speaker_names = set()
+#     for segment in transcript:
+#         speaker_name = segment.get("speaker", "Unknown")
+#         if speaker_name and speaker_name != "Unknown":
+#             speaker_names.add(speaker_name)
+#     
+#     if not speaker_names:
+#         return  # No speakers to process
+#     
+#     print(f"[DB] Extracting speakers for meeting {meeting_id}: {speaker_names}")
+#     
+#     # Process each speaker - just ensure they exist in the database
+#     for speaker_name in speaker_names:
+#         # Find or create speaker
+#         speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
+#         if not speaker:
+#             # Create new speaker (unknown user for now)
+#             speaker = Speaker(
+#                 id=str(uuid.uuid4()),
+#                 name=speaker_name,
+#                 audio_reference=None,  # No audio reference for auto-detected speakers
+#             )
+#             db.add(speaker)
+#             db.flush()  # Flush to get the speaker ID
+#             print(f"[DB] Created new speaker: {speaker_name} (ID: {speaker.id})")
+#         else:
+#             print(f"[DB] Found existing speaker: {speaker_name} (ID: {speaker.id})")
 
 
 def save_meeting_to_db(meeting_data: dict):
@@ -118,10 +125,10 @@ def save_meeting_to_db(meeting_data: dict):
                 )
                 db.add(meeting)
             
-            # Extract and link speakers from transcript
-            transcript = meeting_data.get("transcript", [])
-            if transcript:
-                _extract_and_link_speakers(meeting_data["meeting_id"], transcript, db)
+            # DISABLED: Extract and link speakers from transcript (no diarization, no need for speakers)
+            # transcript = meeting_data.get("transcript", [])
+            # if transcript:
+            #     _extract_and_link_speakers(meeting_data["meeting_id"], transcript, db)
             
             db.commit()
             db.close()
@@ -225,189 +232,202 @@ def get_all_meetings_from_db(include_full_data: bool = False) -> List[Dict]:
     return meetings_sorted
 
 
-def get_meeting_speakers(meeting_id: str, transcript: Optional[List[Dict]] = None) -> List[Dict]:
-    """Get all speakers for a meeting by extracting from transcript
-    
-    Args:
-        meeting_id: Meeting ID
-        transcript: Optional transcript to use instead of fetching from DB
-    """
-    # Use provided transcript or get meeting to extract speakers from transcript
-    if transcript is None:
-        meeting = get_meeting_from_db_or_memory(meeting_id)
-        if not meeting:
-            return []
-        transcript = meeting.get("transcript", [])
-    
-    if not transcript:
-        return []
-    
-    # Extract unique speaker names from transcript
-    speaker_names = set()
-    for segment in transcript:
-        speaker_name = segment.get("speaker", "Unknown")
-        if speaker_name and speaker_name != "Unknown":
-            speaker_names.add(speaker_name)
-    
-    if not speaker_names:
-        return []
-    
-    # Try to get speaker details from database if available
-    if DB_AVAILABLE and SessionLocal:
-        try:
-            db = SessionLocal()
-            # Batch query all speakers at once instead of one-by-one
-            speakers_db = db.query(Speaker).filter(Speaker.name.in_(speaker_names)).all()
-            speakers_dict = {s.name: s for s in speakers_db}
-            
-            speakers = []
-            for speaker_name in speaker_names:
-                speaker = speakers_dict.get(speaker_name)
-                if speaker:
-                    speakers.append({
-                        "id": speaker.id,
-                        "name": speaker.name,
-                        "audio_reference": speaker.audio_reference,
-                        "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
-                    })
-                else:
-                    # Speaker not in database, return basic info
-                    speakers.append({
-                        "id": None,
-                        "name": speaker_name,
-                        "audio_reference": None,
-                        "created_at": None,
-                    })
-            db.close()
-            return speakers
-        except Exception as e:
-            print(f"Error reading speakers from database: {e}")
-            if 'db' in locals():
-                db.close()
-    
-    # Fallback: return basic speaker info from transcript
-    return [{"id": None, "name": name, "audio_reference": None, "created_at": None} 
-            for name in speaker_names]
+# DISABLED: Speaker extraction (no diarization, no need for speakers)
+# def get_meeting_speakers(meeting_id: str, transcript: Optional[List[Dict]] = None) -> List[Dict]:
+#     """Get all speakers for a meeting by extracting from transcript JSON
+#     
+#     Extracts speaker information directly from the transcript JSON column in the meetings table.
+#     Each transcript segment has a 'speaker' attribute that contains the speaker name.
+#     No diarization is used - speakers are taken directly from the stored transcript data.
+#     
+#     Args:
+#         meeting_id: Meeting ID
+#         transcript: Optional transcript to use instead of fetching from DB
+#     """
+#     # Use provided transcript or get meeting to extract speakers from transcript JSON
+#     if transcript is None:
+#         meeting = get_meeting_from_db_or_memory(meeting_id)
+#         if not meeting:
+#             return []
+#         transcript = meeting.get("transcript", [])
+#     
+#     if not transcript:
+#         return []
+#     
+#     # Extract unique speaker names from transcript JSON (each segment has a 'speaker' field)
+#     speaker_names = set()
+#     for segment in transcript:
+#         speaker_name = segment.get("speaker", "Unknown")
+#         if speaker_name and speaker_name != "Unknown":
+#             speaker_names.add(speaker_name)
+#     
+#     if not speaker_names:
+#         return []
+#     
+#     # Try to get speaker details from database if available
+#     if DB_AVAILABLE and SessionLocal:
+#         try:
+#             db = SessionLocal()
+#             # Batch query all speakers at once instead of one-by-one
+#             speakers_db = db.query(Speaker).filter(Speaker.name.in_(speaker_names)).all()
+#             speakers_dict = {s.name: s for s in speakers_db}
+#             
+#             speakers = []
+#             for speaker_name in speaker_names:
+#                 speaker = speakers_dict.get(speaker_name)
+#                 if speaker:
+#                     speakers.append({
+#                         "id": speaker.id,
+#                         "name": speaker.name,
+#                         "audio_reference": speaker.audio_reference,
+#                         "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
+#                     })
+#                 else:
+#                     # Speaker not in database, return basic info
+#                     speakers.append({
+#                         "id": None,
+#                         "name": speaker_name,
+#                         "audio_reference": None,
+#                         "created_at": None,
+#                     })
+#             db.close()
+#             return speakers
+#         except Exception as e:
+#             print(f"Error reading speakers from database: {e}")
+#             if 'db' in locals():
+#                 db.close()
+#     
+#     # Fallback: return basic speaker info from transcript
+#     return [{"id": None, "name": name, "audio_reference": None, "created_at": None} 
+#             for name in speaker_names]
 
 
-def get_speakers_for_meetings_batch(meeting_transcripts: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
-    """Get speakers for multiple meetings in a single batch query
-    
-    Args:
-        meeting_transcripts: Dict mapping meeting_id to transcript list
-    
-    Returns:
-        Dict mapping meeting_id to list of speakers
-    """
-    # Collect all unique speaker names across all meetings
-    all_speaker_names = set()
-    meeting_speaker_map = {}  # meeting_id -> set of speaker names
-    
-    for meeting_id, transcript in meeting_transcripts.items():
-        speaker_names = set()
-        for segment in transcript:
-            speaker_name = segment.get("speaker", "Unknown")
-            if speaker_name and speaker_name != "Unknown":
-                speaker_names.add(speaker_name)
-                all_speaker_names.add(speaker_name)
-        meeting_speaker_map[meeting_id] = speaker_names
-    
-    if not all_speaker_names:
-        return {mid: [] for mid in meeting_transcripts.keys()}
-    
-    # Batch query all speakers at once
-    speakers_dict = {}
-    if DB_AVAILABLE and SessionLocal:
-        try:
-            db = SessionLocal()
-            speakers_db = db.query(Speaker).filter(Speaker.name.in_(all_speaker_names)).all()
-            speakers_dict = {s.name: s for s in speakers_db}
-            db.close()
-        except Exception as e:
-            print(f"Error reading speakers from database: {e}")
-            if 'db' in locals():
-                db.close()
-    
-    # Build result for each meeting
-    result = {}
-    for meeting_id, speaker_names in meeting_speaker_map.items():
-        speakers = []
-        for speaker_name in speaker_names:
-            speaker = speakers_dict.get(speaker_name)
-            if speaker:
-                speakers.append({
-                    "id": speaker.id,
-                    "name": speaker.name,
-                    "audio_reference": speaker.audio_reference,
-                    "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
-                })
-            else:
-                speakers.append({
-                    "id": None,
-                    "name": speaker_name,
-                    "audio_reference": None,
-                    "created_at": None,
-                })
-        result[meeting_id] = speakers
-    
-    return result
+# DISABLED: Speaker extraction (no diarization, no need for speakers)
+# def get_speakers_for_meetings_batch(meeting_transcripts: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
+#     """Get speakers for multiple meetings in a single batch query
+#     
+#     Extracts speaker information directly from the transcript JSON for each meeting.
+#     Each transcript segment has a 'speaker' attribute that contains the speaker name.
+#     No diarization is used - speakers are taken directly from the stored transcript data.
+#     
+#     Args:
+#         meeting_transcripts: Dict mapping meeting_id to transcript list (from transcript JSON column)
+#     
+#     Returns:
+#         Dict mapping meeting_id to list of speakers
+#     """
+#     # Collect all unique speaker names across all meetings by reading from transcript JSON
+#     all_speaker_names = set()
+#     meeting_speaker_map = {}  # meeting_id -> set of speaker names
+#     
+#     for meeting_id, transcript in meeting_transcripts.items():
+#         speaker_names = set()
+#         for segment in transcript:
+#             # Extract speaker name from transcript segment JSON
+#             speaker_name = segment.get("speaker", "Unknown")
+#             if speaker_name and speaker_name != "Unknown":
+#                 speaker_names.add(speaker_name)
+#                 all_speaker_names.add(speaker_name)
+#         meeting_speaker_map[meeting_id] = speaker_names
+#     
+#     if not all_speaker_names:
+#         return {mid: [] for mid in meeting_transcripts.keys()}
+#     
+#     # Batch query all speakers at once
+#     speakers_dict = {}
+#     if DB_AVAILABLE and SessionLocal:
+#         try:
+#             db = SessionLocal()
+#             speakers_db = db.query(Speaker).filter(Speaker.name.in_(all_speaker_names)).all()
+#             speakers_dict = {s.name: s for s in speakers_db}
+#             db.close()
+#         except Exception as e:
+#             print(f"Error reading speakers from database: {e}")
+#             if 'db' in locals():
+#                 db.close()
+#     
+#     # Build result for each meeting
+#     result = {}
+#     for meeting_id, speaker_names in meeting_speaker_map.items():
+#         speakers = []
+#         for speaker_name in speaker_names:
+#             speaker = speakers_dict.get(speaker_name)
+#             if speaker:
+#                 speakers.append({
+#                     "id": speaker.id,
+#                     "name": speaker.name,
+#                     "audio_reference": speaker.audio_reference,
+#                     "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
+#                 })
+#             else:
+#                 speakers.append({
+#                     "id": None,
+#                     "name": speaker_name,
+#                     "audio_reference": None,
+#                     "created_at": None,
+#                 })
+#         result[meeting_id] = speakers
+#     
+#     return result
 
 
-def get_speaker_meetings(speaker_id: str) -> List[str]:
-    """Get all meeting IDs for a speaker by searching through meeting transcripts"""
-    # First, get the speaker name from the database
-    speaker_name = None
-    if DB_AVAILABLE and SessionLocal:
-        try:
-            db = SessionLocal()
-            speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
-            if speaker:
-                speaker_name = speaker.name
-            db.close()
-        except Exception as e:
-            print(f"Error reading speaker from database: {e}")
-            if 'db' in locals():
-                db.close()
-    
-    if not speaker_name:
-        return []
-    
-    # Search through all meetings to find where this speaker appears
-    meetings = get_all_meetings_from_db()
-    meeting_ids = []
-    
-    for meeting in meetings:
-        transcript = meeting.get("transcript", [])
-        for segment in transcript:
-            if segment.get("speaker") == speaker_name:
-                meeting_ids.append(meeting.get("meeting_id") or meeting.get("id"))
-                break  # Found speaker in this meeting, move to next meeting
-    
-    return meeting_ids
+# DISABLED: Speaker extraction (no diarization, no need for speakers)
+# def get_speaker_meetings(speaker_id: str) -> List[str]:
+#     """Get all meeting IDs for a speaker by searching through meeting transcripts"""
+#     # First, get the speaker name from the database
+#     speaker_name = None
+#     if DB_AVAILABLE and SessionLocal:
+#         try:
+#             db = SessionLocal()
+#             speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+#             if speaker:
+#                 speaker_name = speaker.name
+#             db.close()
+#         except Exception as e:
+#             print(f"Error reading speaker from database: {e}")
+#             if 'db' in locals():
+#                 db.close()
+#     
+#     if not speaker_name:
+#         return []
+#     
+#     # Search through all meetings to find where this speaker appears
+#     meetings = get_all_meetings_from_db()
+#     meeting_ids = []
+#     
+#     for meeting in meetings:
+#         transcript = meeting.get("transcript", [])
+#         for segment in transcript:
+#             if segment.get("speaker") == speaker_name:
+#                 meeting_ids.append(meeting.get("meeting_id") or meeting.get("id"))
+#                 break  # Found speaker in this meeting, move to next meeting
+#     
+#     return meeting_ids
 
 
-def get_speaker_by_name(speaker_name: str) -> Optional[Dict]:
-    """Get speaker by name"""
-    if DB_AVAILABLE and SessionLocal:
-        try:
-            db = SessionLocal()
-            speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
-            if speaker:
-                result = {
-                    "id": speaker.id,
-                    "name": speaker.name,
-                    "audio_reference": speaker.audio_reference,
-                    "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
-                }
-                db.close()
-                return result
-            db.close()
-        except Exception as e:
-            print(f"Error reading speaker from database: {e}")
-            if 'db' in locals():
-                db.close()
-    
-    return None
+# DISABLED: Speaker extraction (no diarization, no need for speakers)
+# def get_speaker_by_name(speaker_name: str) -> Optional[Dict]:
+#     """Get speaker by name"""
+#     if DB_AVAILABLE and SessionLocal:
+#         try:
+#             db = SessionLocal()
+#             speaker = db.query(Speaker).filter(Speaker.name == speaker_name).first()
+#             if speaker:
+#                 result = {
+#                     "id": speaker.id,
+#                     "name": speaker.name,
+#                     "audio_reference": speaker.audio_reference,
+#                     "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
+#                 }
+#                 db.close()
+#                 return result
+#             db.close()
+#         except Exception as e:
+#             print(f"Error reading speaker from database: {e}")
+#             if 'db' in locals():
+#                 db.close()
+#     
+#     return None
 
 
 def merge_diarized_transcripts(meeting_id: str, diarized_segments: List[Dict]) -> bool:

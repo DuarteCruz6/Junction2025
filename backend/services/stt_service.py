@@ -208,7 +208,8 @@ class STTService:
                         # Only add segment if text is valid
                         if self._is_valid_transcription(text):
                             segments.append({
-                                "speaker": speaker,
+                                # DISABLED: speaker field (no diarization, no need for speakers)
+                                # "speaker": speaker,
                                 "text": text,
                                 "start": start,
                                 "end": end,
@@ -223,7 +224,8 @@ class STTService:
                     
                     if self._is_valid_transcription(text):
                         segments.append({
-                            "speaker": "Unknown",
+                            # DISABLED: speaker field (no diarization, no need for speakers)
+                            # "speaker": "Unknown",
                             "text": text,
                             "start": 0.0,
                             "end": transcript_dict.get('duration', 0.0),
@@ -238,7 +240,8 @@ class STTService:
                     
                     if self._is_valid_transcription(text):
                         segments.append({
-                            "speaker": "Unknown",
+                            # DISABLED: speaker field (no diarization, no need for speakers)
+                            # "speaker": "Unknown",
                             "text": text,
                             "start": 0.0,
                             "end": getattr(transcription, 'duration', 0.0),

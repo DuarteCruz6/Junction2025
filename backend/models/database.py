@@ -80,14 +80,15 @@ class Task(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class Speaker(Base):
-    """Known speaker model"""
-    __tablename__ = "speakers"
-    
-    id = Column(String, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
-    audio_reference = Column(Text, nullable=True)  # Path or data URL to voice sample
-    created_at = Column(DateTime, default=datetime.utcnow)
+# DISABLED: Speaker model (no diarization, no need for speakers)
+# class Speaker(Base):
+#     """Known speaker model"""
+#     __tablename__ = "speakers"
+#     
+#     id = Column(String, primary_key=True)
+#     name = Column(String, nullable=False, unique=True)
+#     audio_reference = Column(Text, nullable=True)  # Path or data URL to voice sample
+#     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class UserSettings(Base):

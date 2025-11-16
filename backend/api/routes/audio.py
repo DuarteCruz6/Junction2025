@@ -71,7 +71,8 @@ async def stream_audio(
     for segment in result["segments"]:
         transcript_entry = {
             "text": segment["text"],
-            "speaker": segment["speaker"],
+            # DISABLED: speaker field (no diarization, no need for speakers)
+            # "speaker": segment["speaker"],
             "start": segment["start"],
             "end": segment["end"],
             "timestamp": datetime.now().isoformat(),
@@ -94,14 +95,16 @@ async def stream_audio(
         latest = new_segments[-1]
         return JSONResponse(content={
             "transcript": latest["text"],
-            "speaker": latest["speaker"],
+            # DISABLED: speaker field (no diarization, no need for speakers)
+            # "speaker": latest["speaker"],
             "full_text": result["full_text"],
             "segments": new_segments,
         })
     else:
         return JSONResponse(content={
             "transcript": "",
-            "speaker": "Unknown",
+            # DISABLED: speaker field (no diarization, no need for speakers)
+            # "speaker": "Unknown",
             "full_text": "",
             "segments": [],
         })
@@ -155,7 +158,8 @@ async def submit_transcription(
         
         transcript_entry = {
             "text": segment.text,
-            "speaker": segment.speaker or "Unknown",
+            # DISABLED: speaker field (no diarization, no need for speakers)
+            # "speaker": segment.speaker or "Unknown",
             "start": start_time,
             "end": end_time,
             "timestamp": current_time.isoformat(),

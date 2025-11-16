@@ -519,6 +519,144 @@
             background: rgba(76, 175, 80, 0.5);
         }
 
+        .audio-button {
+            background: rgba(156, 39, 176, 0.3);
+            border: 2px solid rgba(156, 39, 176, 0.5);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 16px;
+            margin-right: 12px;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .audio-button:hover:not(:disabled) {
+            background: rgba(156, 39, 176, 0.5);
+        }
+
+        .audio-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .audio-button.loading {
+            position: relative;
+        }
+
+        .audio-button.loading::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            margin: auto;
+            border: 2px solid transparent;
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .audio-player-container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .audio-player-container.active {
+            display: block;
+        }
+
+        .audio-player {
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .audio-player-info {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .audio-buttons-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .personality-selector {
+            margin-bottom: 16px;
+        }
+
+        .personality-selector-label {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .personality-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .personality-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 50px;
+            text-align: center;
+            position: relative;
+        }
+
+        .personality-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
+
+        .personality-button.selected {
+            background: rgba(156, 39, 176, 0.5);
+            border-color: rgba(156, 39, 176, 0.8);
+            box-shadow: 0 0 10px rgba(156, 39, 176, 0.5);
+        }
+
+        .personality-button.selected::after {
+            content: "✓";
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: rgba(156, 39, 176, 1);
+            color: white;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
         .transcript-content {
             background: rgba(255, 255, 255, 0.1);
             padding: 16px;
@@ -799,7 +937,6 @@
     </div>
     
     <div id="transcript" class="hidden">
-        <button class="close-button" onclick="closeTranscript()" title="Close">×</button>
     </div>
     <div id="notification"></div>
 
@@ -1965,6 +2102,9 @@
             }
         }
 
+        // Store selected voice for current meeting
+        let selectedVoiceId = null;
+
         // Show meeting detail
         window.showMeetingDetail = async function(meetingId) {
             const content = document.getElementById('meetingDetailContent');
@@ -1975,8 +2115,21 @@
             showView(meetingDetailView, button, fromView);
 
             try {
-                const meetingRes = await fetch(`${BACKEND_URL}/api/meetings/${meetingId}`);
+                // Fetch meeting and voices in parallel
+                const [meetingRes, voicesRes] = await Promise.all([
+                    fetch(`${BACKEND_URL}/api/meetings/${meetingId}`),
+                    fetch(`${BACKEND_URL}/api/voices`)
+                ]);
+                
                 const meeting = await meetingRes.json();
+                const voicesData = await voicesRes.json();
+                const voices = voicesData.voices || [];
+                
+                // Reset and set default to first voice for this meeting
+                selectedVoiceId = null;
+                if (voices.length > 0) {
+                    selectedVoiceId = voices[0].voice_id;
+                }
                 
                 const title = meeting.title || `Meeting ${new Date(meeting.start_time).toLocaleString()}`;
                 const summary = meeting.summary || 'No summary available';
@@ -1988,12 +2141,44 @@
                     headerText.textContent = title;
                 }
                 
+                // Build personality buttons
+                const personalityButtons = voices.map(voice => {
+                    const isSelected = voice.voice_id === selectedVoiceId;
+                    // Escape HTML in title attribute
+                    const title = `${voice.name} - ${(voice.description || '').replace(/"/g, '&quot;')}`;
+                    return `
+                        <button class="personality-button ${isSelected ? 'selected' : ''}" 
+                                onclick="selectPersonality('${voice.voice_id}', this)"
+                                title="${title}">
+                            ${voice.emoji}
+                        </button>
+                    `;
+                }).join('');
+                
                 content.innerHTML = `
                     <div class="meeting-detail">
                         <div class="meeting-detail-summary">${summary}</div>
-                        <button class="transcript-button" onclick="toggleTranscript('${meetingId}', this)">
-                            ${transcriptVisible ? 'Hide' : 'Show'} Transcript
-                        </button>
+                        <div class="personality-selector">
+                            <label class="personality-selector-label">Choose Personality:</label>
+                            <div class="personality-buttons">
+                                ${personalityButtons}
+                            </div>
+                        </div>
+                        <div class="audio-buttons-group">
+                            <button class="audio-button" id="audioSummaryButton" onclick="generateAudio('${meetingId}', 'summary', this)">
+                                🎙️ Listen to Summary
+                            </button>
+                            <button class="audio-button" id="audioTranscriptButton" onclick="generateAudio('${meetingId}', 'transcript', this)">
+                                🎙️ Listen to Transcript
+                            </button>
+                            <button class="transcript-button" onclick="toggleTranscript('${meetingId}', this)">
+                                ${transcriptVisible ? 'Hide' : 'Show'} Transcript
+                            </button>
+                        </div>
+                        <div class="audio-player-container" id="audioPlayerContainer">
+                            <audio class="audio-player" id="audioPlayer" controls></audio>
+                            <div class="audio-player-info" id="audioPlayerInfo"></div>
+                        </div>
                         <div id="transcriptContainer" style="display: none;">
                             <div class="transcript-content" id="transcriptContent"></div>
                         </div>
@@ -2003,6 +2188,20 @@
                 console.error('Error loading meeting detail:', error);
                 content.innerHTML = '<div class="empty-state">Error loading meeting details</div>';
             }
+        };
+
+        // Select personality
+        window.selectPersonality = function(voiceId, button) {
+            selectedVoiceId = voiceId;
+            
+            // Update all personality buttons
+            const allButtons = document.querySelectorAll('.personality-button');
+            allButtons.forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Mark selected button
+            button.classList.add('selected');
         };
 
         // Toggle transcript
@@ -2039,6 +2238,73 @@
                         transcriptContent.innerHTML = '<div class="empty-state">Error loading transcript</div>';
                     }
                 }
+            }
+        };
+
+        // Generate and play audio
+        window.generateAudio = async function(meetingId, audioType, button) {
+            const audioPlayerContainer = document.getElementById('audioPlayerContainer');
+            const audioPlayer = document.getElementById('audioPlayer');
+            const audioPlayerInfo = document.getElementById('audioPlayerInfo');
+            
+            // Use selected voice or default to first
+            const voiceId = selectedVoiceId || null;
+            
+            // Show loading state
+            button.disabled = true;
+            button.classList.add('loading');
+            const originalText = button.innerHTML;
+            button.innerHTML = audioType === 'summary' ? '🎙️ Generating Summary Audio...' : '🎙️ Generating Transcript Audio...';
+            
+            try {
+                // Build URL with query parameters
+                let url = `${BACKEND_URL}/api/meetings/${meetingId}/audio/generate?audio_type=${audioType}`;
+                if (voiceId) {
+                    url += `&voice_id=${voiceId}`;
+                }
+                
+                // Call the backend to generate audio
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to generate audio');
+                }
+
+                const data = await response.json();
+                
+                // Set audio source
+                const audioUrl = `${BACKEND_URL}${data.audio_url}`;
+                audioPlayer.src = audioUrl;
+                
+                // Show player and info
+                audioPlayerContainer.classList.add('active');
+                audioPlayerInfo.textContent = `Playing ${audioType === 'summary' ? 'summary' : 'transcript'} audio`;
+                
+                // Try to play audio
+                try {
+                    await audioPlayer.play();
+                } catch (playError) {
+                    console.warn('Auto-play prevented:', playError);
+                    audioPlayerInfo.textContent = `Audio ready. Click play to listen to ${audioType === 'summary' ? 'summary' : 'transcript'}.`;
+                }
+                
+                showNotification(`${audioType === 'summary' ? 'Summary' : 'Transcript'} audio generated successfully`, 3000);
+                
+            } catch (error) {
+                console.error('Error generating audio:', error);
+                showNotification(`Error generating audio: ${error.message}`, 5000);
+                audioPlayerContainer.classList.remove('active');
+            } finally {
+                // Reset button state
+                button.disabled = false;
+                button.classList.remove('loading');
+                button.innerHTML = originalText;
             }
         };
 

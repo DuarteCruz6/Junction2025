@@ -135,7 +135,9 @@ async def audio_streaming_endpoint(
                 transcript = meeting.get("transcript", [])
                 if transcript:
                     last_entry = transcript[-1]
-                    if last_entry.get("text") == text and last_entry.get("speaker") == "Unknown":
+                    # DISABLED: speaker check (no diarization, no need for speakers)
+                    # if last_entry.get("text") == text and last_entry.get("speaker") == "Unknown":
+                    if last_entry.get("text") == text:
                         # Duplicate detected, skip
                         return
                 
@@ -148,13 +150,14 @@ async def audio_streaming_endpoint(
                 
                 transcript_entry = {
                     "text": text,
-                    "speaker": "Unknown",  # Realtime API doesn't support diarization
+                    # DISABLED: speaker field (no diarization, no need for speakers)
+                    # "speaker": "Unknown",
                     "start": start_time,
                     "end": end_time,
                     "timestamp": datetime.now().isoformat(),
                 }
                 
-                print(f"📝 Unknown: {text}", flush=True)
+                print(f"📝 {text}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 save_meeting_to_db(meeting)
@@ -247,16 +250,16 @@ async def audio_streaming_endpoint(
             for segment in segments:
                 transcript_entry = {
                     "text": segment["text"],
-                    "speaker": segment["speaker"],
+                    # DISABLED: speaker field (no diarization, no need for speakers)
+                    # "speaker": segment["speaker"],
                     "start": segment["start"],
                     "end": segment["end"],
                     "timestamp": datetime.now().isoformat(),
                 }
                 
                 # Show transcription (clean output)
-                speaker = segment.get("speaker", "Unknown")
                 text = segment.get("text", "")
-                print(f"📝 {speaker}: {text}", flush=True)
+                print(f"📝 {text}", flush=True)
                 
                 meeting["transcript"].append(transcript_entry)
                 new_segments.append(transcript_entry)

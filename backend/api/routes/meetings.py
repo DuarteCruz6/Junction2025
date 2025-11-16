@@ -2,16 +2,20 @@
 Meeting management endpoints
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from datetime import datetime
+from typing import Optional
 import uuid
 import asyncio
 
 from services.llm_service import llm_service
 from services.stt_service import stt_service
+from services.tts_service import tts_service
 from services.websocket_manager import websocket_manager
-from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db, get_meeting_speakers, get_speakers_for_meetings_batch, merge_diarized_transcripts, DB_AVAILABLE
+from utils.db_helpers import get_meeting_from_db_or_memory, save_meeting_to_db, get_all_meetings_from_db, merge_diarized_transcripts, DB_AVAILABLE
+# DISABLED: speaker functions (no diarization, no need for speakers)
+# from utils.db_helpers import get_meeting_speakers, get_speakers_for_meetings_batch
 from utils.storage import meetings_db, audio_streams, background_tasks
 from services.background_tasks import process_summary_update, process_task_extraction, process_batch_diarization
 
@@ -138,7 +142,8 @@ async def stop_meeting(meeting_id: str):
             for segment in segments:
                 transcript_entry = {
                     "text": segment["text"],
-                    "speaker": segment.get("speaker", "Unknown"),
+                    # DISABLED: speaker field (no diarization, no need for speakers)
+                    # "speaker": segment.get("speaker", "Unknown"),
                     "start": segment.get("start", 0.0),
                     "end": segment.get("end", 0.0),
                     "timestamp": datetime.now().isoformat(),
@@ -153,7 +158,8 @@ async def stop_meeting(meeting_id: str):
             for segment in segments:
                 transcript_entry = {
                     "text": segment["text"],
-                    "speaker": segment.get("speaker", "Unknown"),
+                    # DISABLED: speaker field (no diarization, no need for speakers)
+                    # "speaker": segment.get("speaker", "Unknown"),
                     "start": segment.get("start", 0.0),
                     "end": segment.get("end", 0.0),
                     "timestamp": datetime.now().isoformat(),
@@ -226,14 +232,13 @@ async def get_meeting(meeting_id: str):
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    # Get speakers for this meeting
-    speakers = get_meeting_speakers(meeting_id)
+    # DISABLED: Get speakers for this meeting (no diarization, no need for speakers)
+    # speakers = get_meeting_speakers(meeting_id)
+    # meeting_with_speakers = meeting.copy()
+    # meeting_with_speakers["speakers"] = speakers
+    # return JSONResponse(content=meeting_with_speakers)
     
-    # Add speakers to meeting response
-    meeting_with_speakers = meeting.copy()
-    meeting_with_speakers["speakers"] = speakers
-    
-    return JSONResponse(content=meeting_with_speakers)
+    return JSONResponse(content=meeting)
 
 
 @router.get("/api/meetings")
@@ -242,50 +247,51 @@ async def get_meetings():
     # Get meetings without full data (faster)
     meetings = get_all_meetings_from_db(include_full_data=False)
     
+    # DISABLED: Speaker extraction (no diarization, no need for speakers)
     # To get speakers, we need transcripts but don't want to load full data
     # So we'll fetch transcripts separately and batch process speakers
-    if DB_AVAILABLE:
-        try:
-            from models.database import Meeting, SessionLocal
-            if SessionLocal:
-                db = SessionLocal()
-                # Get just transcripts for speaker extraction (not full meeting data)
-                meeting_ids = [m.get("meeting_id") for m in meetings if m.get("meeting_id")]
-                if meeting_ids:
-                    # Query only transcript column for these meetings
-                    meetings_with_transcripts = db.query(
-                        Meeting.id, Meeting.transcript
-                    ).filter(Meeting.id.in_(meeting_ids)).all()
-                    
-                    # Build transcript map
-                    transcript_map = {m.id: (m.transcript or []) for m in meetings_with_transcripts}
-                    
-                    # Batch get speakers for all meetings
-                    speakers_map = get_speakers_for_meetings_batch(transcript_map)
-                    
-                    # Add speakers to meetings
-                    for meeting in meetings:
-                        meeting_id = meeting.get("meeting_id")
-                        if meeting_id:
-                            meeting["speakers"] = speakers_map.get(meeting_id, [])
-                    
-                    db.close()
-                else:
-                    # No meetings, add empty speakers
-                    for meeting in meetings:
-                        meeting["speakers"] = []
-        except Exception as e:
-            print(f"Error loading speakers for meetings: {e}")
-            # Fallback: add empty speakers
-            for meeting in meetings:
-                meeting["speakers"] = []
-    else:
-        # Fallback: try to get speakers individually (slower but works)
-        for meeting in meetings:
-            meeting_id = meeting.get("meeting_id")
-            if meeting_id:
-                speakers = get_meeting_speakers(meeting_id)
-                meeting["speakers"] = speakers
+    # if DB_AVAILABLE:
+    #     try:
+    #         from models.database import Meeting, SessionLocal
+    #         if SessionLocal:
+    #             db = SessionLocal()
+    #             # Get just transcripts for speaker extraction (not full meeting data)
+    #             meeting_ids = [m.get("meeting_id") for m in meetings if m.get("meeting_id")]
+    #             if meeting_ids:
+    #                 # Query only transcript column for these meetings
+    #                 meetings_with_transcripts = db.query(
+    #                     Meeting.id, Meeting.transcript
+    #                 ).filter(Meeting.id.in_(meeting_ids)).all()
+    #                 
+    #                 # Build transcript map
+    #                 transcript_map = {m.id: (m.transcript or []) for m in meetings_with_transcripts}
+    #                 
+    #                 # Batch get speakers for all meetings
+    #                 speakers_map = get_speakers_for_meetings_batch(transcript_map)
+    #                 
+    #                 # Add speakers to meetings
+    #                 for meeting in meetings:
+    #                     meeting_id = meeting.get("meeting_id")
+    #                     if meeting_id:
+    #                         meeting["speakers"] = speakers_map.get(meeting_id, [])
+    #                 
+    #                 db.close()
+    #             else:
+    #                 # No meetings, add empty speakers
+    #                 for meeting in meetings:
+    #                     meeting["speakers"] = []
+    #     except Exception as e:
+    #         print(f"Error loading speakers for meetings: {e}")
+    #         # Fallback: add empty speakers
+    #         for meeting in meetings:
+    #             meeting["speakers"] = []
+    # else:
+    #     # Fallback: try to get speakers individually (slower but works)
+    #     for meeting in meetings:
+    #         meeting_id = meeting.get("meeting_id")
+    #         if meeting_id:
+    #             speakers = get_meeting_speakers(meeting_id)
+    #             meeting["speakers"] = speakers
     
     return JSONResponse(content={"meetings": meetings})
 
@@ -357,4 +363,110 @@ async def get_meeting_transcript(meeting_id: str):
         "meeting_id": meeting_id,
         "transcript": meeting.get("transcript", []),
     })
+
+
+@router.get("/api/voices")
+async def get_voices():
+    """Get list of available voices from ElevenLabs"""
+    result = tts_service.get_voices()
+    
+    if not result["success"]:
+        raise HTTPException(
+            status_code=500,
+            detail=result.get("error", "Failed to fetch voices")
+        )
+    
+    return JSONResponse(content={
+        "success": True,
+        "voices": result["voices"]
+    })
+
+
+@router.post("/api/meetings/{meeting_id}/audio/generate")
+async def generate_meeting_audio(
+    meeting_id: str, 
+    audio_type: str = Query("summary", description="Type of audio to generate: 'summary' or 'transcript'"),
+    voice_id: Optional[str] = Query(None, description="Voice ID to use for TTS (uses first available if not provided)")
+):
+    """
+    Generate audio from meeting transcript or summary using ElevenLabs TTS
+    
+    Args:
+        meeting_id: Meeting ID
+        audio_type: "summary" or "transcript" (default: "summary")
+        voice_id: Optional voice ID (uses first available if not provided)
+    """
+    meeting = get_meeting_from_db_or_memory(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    try:
+        # If no voice_id provided, get the first available voice
+        if not voice_id:
+            voices_result = tts_service.get_voices()
+            if voices_result["success"] and len(voices_result["voices"]) > 0:
+                voice_id = voices_result["voices"][0]["voice_id"]
+            else:
+                # Fallback to default
+                voice_id = None
+        
+        if audio_type == "summary":
+            summary = meeting.get("summary")
+            if not summary:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Meeting summary not available. Please wait for summary generation."
+                )
+            
+            result = tts_service.generate_audio(
+                text=summary,
+                meeting_id=meeting_id,
+                audio_type="summary",
+                voice_id=voice_id
+            )
+            
+        elif audio_type == "transcript":
+            transcript = meeting.get("transcript", [])
+            if not transcript or len(transcript) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Meeting transcript is empty"
+                )
+            
+            result = tts_service.generate_transcript_audio(
+                transcript=transcript,
+                meeting_id=meeting_id,
+                voice_id=voice_id
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid audio_type. Must be 'summary' or 'transcript'"
+            )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Failed to generate audio")
+            )
+        
+        return JSONResponse(content={
+            "success": True,
+            "meeting_id": meeting_id,
+            "audio_type": audio_type,
+            "filename": result["filename"],
+            "audio_url": result["relative_path"],
+            "message": f"Audio generated successfully"
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Meetings] ❌ Error generating audio: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate audio: {str(e)}"
+        )
 

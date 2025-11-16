@@ -11,11 +11,15 @@ print("=" * 60)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from dotenv import load_dotenv
 
 print("📦 Importing route routers...")
 # Import route routers
-from api.routes import health, meetings, audio, tasks, speakers, persons, settings
+from api.routes import health, meetings, audio, tasks, persons, settings
+# DISABLED: speakers router (no diarization, no need for speakers)
+# from api.routes import speakers
 print("✅ Route routers imported")
 
 # Import database initialization
@@ -57,9 +61,16 @@ app.include_router(health.router)
 app.include_router(meetings.router)
 app.include_router(audio.router)
 app.include_router(tasks.router)
-app.include_router(speakers.router)
+# DISABLED: speakers router (no diarization, no need for speakers)
+# app.include_router(speakers.router)
 app.include_router(persons.router)
 app.include_router(settings.router)
+
+# Mount static files for audio outputs
+audio_outputs_dir = Path(__file__).parent / "audio_outputs"
+audio_outputs_dir.mkdir(exist_ok=True)
+app.mount("/audio", StaticFiles(directory=str(audio_outputs_dir)), name="audio")
+print("✅ Static file serving configured for /audio")
 
 # WebSocket routes need to be added directly (FastAPI routers don't support WebSocket)
 print("📡 Importing WebSocket endpoints...")
